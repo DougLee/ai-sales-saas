@@ -1,5 +1,5 @@
 import { useNavigate, useLocation } from 'react-router-dom'
-import { Home, Target, Phone, TrendingUp, Magnet, KanbanSquare, BookOpen, Settings, HelpCircle, Building2, Inbox, Trophy, BarChart3 } from 'lucide-react'
+import { Home, TrendingUp, Magnet, BookOpen, Settings, HelpCircle, Building2, BarChart3 } from 'lucide-react'
 import { useHasRole } from '../../hooks/use-permission.js'
 import type { UserRole } from '@ai-sales/shared'
 
@@ -11,8 +11,10 @@ const navItems: { id: string; label: string; icon: typeof Home; path: string; ro
   { id: 'workbench', label: '今日作战', icon: Home, path: '/' },
   { id: 'target-customers', label: '目标客户', icon: Target, path: '/customers?status=target', roles: ['TENANT_ADMIN', 'SUPER_ADMIN', 'DEPT_HEAD', 'SALES'] },
   { id: 'customers', label: '客户管理', icon: Building2, path: '/customers', roles: ['TENANT_ADMIN', 'SUPER_ADMIN', 'DEPT_HEAD', 'SALES'] },
-  { id: 'visits', label: '拜访中心', icon: Phone, path: '/visits', roles: ['TENANT_ADMIN', 'SUPER_ADMIN', 'DEPT_HEAD', 'SALES'] },
-  { id: 'confirmations', label: '待确认', icon: Inbox, path: '/confirmations', roles: ['TENANT_ADMIN', 'SUPER_ADMIN', 'DEPT_HEAD', 'SALES'] },
+  // 左侧导航精简：拜访中心 / 待确认 不在侧栏常驻，改由工作台卡片承载入口（路由/功能/topbar 标题映射均保留）
+  // /visits → ModuleNavCard 拜访 / VisitPrepCard；/confirmations → PendingConfirmationCard / 拜访闭环确认节点
+  // { id: 'visits', label: '拜访中心', icon: Phone, path: '/visits', roles: ['TENANT_ADMIN', 'SUPER_ADMIN', 'DEPT_HEAD', 'SALES'] },
+  // { id: 'confirmations', label: '待确认', icon: Inbox, path: '/confirmations', roles: ['TENANT_ADMIN', 'SUPER_ADMIN', 'DEPT_HEAD', 'SALES'] },
   { id: 'leads', label: '线索管理', icon: Magnet, path: '/leads', roles: ['TENANT_ADMIN', 'SUPER_ADMIN', 'DEPT_HEAD', 'SALES'] },
   { id: 'projects', label: '推进商机', icon: TrendingUp, path: '/projects', roles: ['TENANT_ADMIN', 'SUPER_ADMIN', 'DEPT_HEAD', 'SALES'] },
   { id: 'pipeline', label: '销售看板', icon: KanbanSquare, path: '/pipeline', roles: ['TENANT_ADMIN', 'SUPER_ADMIN', 'DEPT_HEAD', 'SALES'] },
