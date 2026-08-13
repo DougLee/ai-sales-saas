@@ -1,0 +1,175 @@
+version: "3.8"
+
+# =============================================================================
+# AI 销售管理系统 — 生产部署 Compose
+# 版本：V3.3（2026-06-28 CRM 重构 + 今日作战四层架构）
+#
+# 安全改造要点（相对于旧版）：
+#   - 移除 postgres / redis / minio / api 的公网端口映射
+#   - 仅 web:80 对外
+#   - 新增 uploads_data / logs_data 命名卷
+#   - 所有服务加 security_opt: no-new-privileges
+#   - api 加 stop_grace_period 配合 graceful shutdown
+#   - healthcheck 串联 depends_on
+# =============================================================================
+
+services:
+  postgres:
+    image: ankane/pgvector:latest
+    container_name: ai-sales-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-aisales}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      POSTGRES_DB: ${POSTGRES_DB:-aisales}
+    # 关键：不对外暴露 5432，仅 docker 内网可访问
+    expose:
+      - "5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aisales} -d ${POSTGRES_DB:-aisales}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    security_opt:
+      - "no-new-privileges:true"
+    networks:
+      - ai-sales-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: ai-sales-redis
+    restart: unless-stopped
+    command: ["redis-server", "--save", "60", "1", "--appendonly", "no"]
+    # 关键：不对外暴露 6379
+    expose:
+      - "6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    security_opt:
+      - "no-new-privileges:true"
+    networks:
+      - ai-sales-net
+
+  minio:
+    image: minio/minio:latest
+    container_name: ai-sales-minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER must be set}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set}
+    # 关键：9000/9001 仅 docker 内网（nginx 反代需要的话再加 web 端映射）
+    expose:
+      - "9000"
+      - "9001"
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    security_opt:
+      - "no-new-privileges:true"
+    networks:
+      - ai-sales-net
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: ai-sales-api
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      JWT_SECRET: ${JWT_SECRET}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+      NODE_ENV: production
+      PORT: 3000
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      SERVICE_NAME: ${SERVICE_NAME:-ai-sales-api}
+      SERVICE_VERSION: ${SERVICE_VERSION:-}
+    # 关键：api 不对外暴露（仅 web:80 反代）
+    expose:
+      - "3000"
+    volumes:
+      - uploads_data:/app/apps/api/uploads
+      - logs_data:/app/apps/api/logs
+      - ai_config_data:/app/apps/api/config
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/health > /dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    stop_grace_period: 30s
+    security_opt:
+      - "no-new-privileges:true"
+    networks:
+      - ai-sales-net
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: ai-sales-web
+    restart: unless-stopped
+    # 关键：仅 web:80 对外
+    ports:
+      - "80:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ > /dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    security_opt:
+      - "no-new-privileges:true"
+    networks:
+      - ai-sales-net
+
+volumes:
+  postgres_data:
+    name: ai-sales-saas_postgres_data
+  redis_data:
+    name: ai-sales-saas_redis_data
+  minio_data:
+    name: ai-sales-saas_minio_data
+  uploads_data:
+    name: ai-sales-saas_uploads_data
+  logs_data:
+    name: ai-sales-saas_logs_data
+  ai_config_data:
+    name: ai-sales-saas_ai_config_data
+
+networks:
+  ai-sales-net:
+    name: ai-sales-net
+    driver: bridge

@@ -1,0 +1,240 @@
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { get, post, put, del } from '../lib/api.js'
+import { toast } from '../lib/toast.js'
+
+export interface Company {
+  id: string
+  name: string
+  industry?: string
+  scale?: string
+  region?: string
+  level?: string
+  address?: string
+  website?: string
+  contactPerson?: string
+  contactPhone?: string
+  notes?: string
+  status?: string
+  completenessScore?: number
+  dataConfidence?: string
+  ownerId?: string | null
+  owner?: { id: string; name: string } | null
+  createdAt: string
+  updatedAt: string
+  _count?: { projects: number; leads: number; visits: number; tasks: number }
+}
+
+export interface CompanyDetail {
+  company: Company
+  projects: Array<{
+    id: string
+    name: string
+    milestone: number
+    urgency: string
+    healthScore: number | null
+    amount: number | null
+    closedAt: string | null
+    updatedAt: string
+  }>
+  contacts: Array<{
+    id: string
+    name: string
+    position?: string
+    department?: string
+    phone?: string
+    email?: string
+    decisionRole?: string
+    updatedAt: string
+  }>
+  visits: Array<{
+    id: string
+    visitTime: string
+    visitType: string
+    summary?: string
+    contactName?: string
+    project: { name: string }
+  }>
+  tasks: Array<{
+    id: string
+    title: string
+    status: string
+    priority: string
+    deadline?: string
+    project: { name: string }
+  }>
+  stats: {
+    projectCount: number
+    activeProjectCount: number
+    contactCount: number
+    decisionMakerCount: number
+    visitCount: number
+    pendingTaskCount: number
+    overdueTaskCount: number
+    lastContactAt: string | null
+    daysSinceLastContact: number | null
+    avgHealthScore: number | null
+  }
+  risks: Array<{ type: string; message: string; severity: 'HIGH' | 'MEDIUM' | 'LOW' }>
+  completeness: {
+    score: number
+    missingFields: string[]
+  }
+  _readonly?: boolean
+}
+
+export function useCompanies(params?: { search?: string; pool?: string; status?: string }) {
+  const queryString = new URLSearchParams()
+  if (params?.search) queryString.set('search', params.search)
+  if (params?.pool) queryString.set('pool', params.pool)
+  if (params?.status) queryString.set('status', params.status)
+
+  return useQuery({
+    queryKey: ['companies', params],
+    queryFn: () =>
+      get<{ items: Company[]; total?: number }>(
+        `/api/companies?${queryString.toString()}`
+      ),
+    refetchInterval: 30_000,
+  })
+}
+
+export function useCompany(id?: string) {
+  return useQuery({
+    queryKey: ['company', id],
+    queryFn: () => get<CompanyDetail>(`/api/companies/${id}`),
+    enabled: !!id,
+  })
+}
+
+export function useCreateCompany() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: Partial<Company>) =>
+      post<{ item: Company }>('/api/companies', data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['companies'] })
+      toast.success('客户创建成功')
+    },
+    onError: (err) => toast.error((err as Error).message || '创建失败'),
+  })
+}
+
+export function useUpdateCompany() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<Company> }) =>
+      put<{ item: Company }>(`/api/companies/${id}`, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['companies'] })
+      toast.success('客户更新成功')
+    },
+    onError: (err) => toast.error((err as Error).message || '更新失败'),
+  })
+}
+
+export function useDeleteCompany() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => del(`/api/companies/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['companies'] })
+      toast.success('客户已删除')
+    },
+    onError: (err) => toast.error((err as Error).message || '删除失败'),
+  })
+}
+
+export function useClaimCompany() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) =>
+      post<{ item: Company }>(`/api/companies/${id}/claim`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['companies'] })
+      qc.invalidateQueries({ queryKey: ['company'] })
+      toast.success('认领成功')
+    },
+    onError: (err) => toast.error((err as Error).message || '认领失败'),
+  })
+}
+
+export function useAssignCompany() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, ownerId }: { id: string; ownerId: string | null }) =>
+      post<{ item: Company }>(`/api/companies/${id}/assign`, { ownerId }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['companies'] })
+      qc.invalidateQueries({ queryKey: ['company'] })
+      toast.success('分配成功')
+    },
+    onError: (err) => toast.error((err as Error).message || '分配失败'),
+  })
+}
+
+export function useUpdateCompanyStatus() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, status, reason }: { id: string; status: string; reason?: string }) =>
+      put<{ item: Company }>(`/api/companies/${id}/status`, { status, reason }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['companies'] })
+      qc.invalidateQueries({ queryKey: ['company'] })
+      toast.success('状态更新成功')
+    },
+    onError: (err) => toast.error((err as Error).message || '状态更新失败'),
+  })
+}
+
+export function useCompanyMissingFields(id?: string) {
+  return useQuery({
+    queryKey: ['company-missing-fields', id],
+    queryFn: () => get<Array<{ field: string; label: string; severity: 'high' | 'medium' }>>(`/api/companies/${id}/missing-fields`),
+    enabled: !!id,
+  })
+}
+
+export function useCompanyChangeHistory(id?: string) {
+  return useQuery({
+    queryKey: ['company-history', id],
+    queryFn: () => get<Array<{ id: string; fieldName: string; oldValue?: string; newValue?: string; createdAt: string; changeSource: string }>>(`/api/companies/${id}/history`),
+    enabled: !!id,
+  })
+}
+
+export function useCompanyDuplicates(name?: string, excludeId?: string) {
+  const queryString = new URLSearchParams()
+  if (name) queryString.set('name', name)
+  if (excludeId) queryString.set('excludeId', excludeId)
+  return useQuery({
+    queryKey: ['company-duplicates', name, excludeId],
+    queryFn: () => get<Array<{ id: string; name: string; similarity: number; reason: string }>>(`/api/companies/duplicates?${queryString.toString()}`),
+    enabled: !!name,
+  })
+}
+
+export interface MergeResult {
+  intoId: string
+  fromId: string
+  migrated: { leads: number; projects: number; contacts: number; visits: number; tasks: number; timeline: number; snapshots: number }
+  filledFields: string[]
+}
+
+/** 客户合并：把 fromId 客户合并进主客户 intoId */
+export function useMergeCompany() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ intoId, fromId }: { intoId: string; fromId: string }) =>
+      post<MergeResult>(`/api/companies/${intoId}/merge`, { fromId }),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['companies'] })
+      qc.invalidateQueries({ queryKey: ['company'] })
+      qc.invalidateQueries({ queryKey: ['company-duplicates'] })
+      qc.invalidateQueries({ queryKey: ['data-quality'] })
+      const m = res?.migrated
+      const total = m ? m.leads + m.projects + m.contacts + m.visits + m.tasks : 0
+      toast.success(`合并完成，已迁移 ${total} 条关联记录`)
+    },
+    onError: (err) => toast.error((err as Error).message || '合并失败'),
+  })
+}

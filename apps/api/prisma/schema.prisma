@@ -1,0 +1,849 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Tenant {
+  id                 String              @id @default(cuid())
+  name               String
+  slug               String              @unique
+  status             String              @default("active")
+  plan               String              @default("free")
+  maxUsers           Int                 @default(5)
+  maxStorageMb       Int                 @default(1024)
+  settings           Json                @default("{}")
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  aiConfigs          AiConfig[]
+  behaviorLogs       BehaviorLog[]
+  chatMessages       ChatMessage[]
+  chatSessions       ChatSession[]
+  companies          Company[]
+  contacts           Contact[]
+  snapshots          CustomerSnapshot[]
+  goals              Goal[]
+  kbDocuments        KbDocument[]
+  leads              Lead[]
+  leadFollowUps      LeadFollowUp[]
+  leadAssessmentJobs LeadAssessmentJob[]
+  methodologyConfigs MethodologyConfig[]
+  orgs               Org[]
+  projects           Project[]
+  tasks              Task[]
+  timeline           TimelineEvent[]
+  users              User[]
+  visits             Visit[]
+  changeHistories    ChangeHistory[]
+  aiPendingItems     AiPendingItem[]
+  projectTypeConfigs ProjectTypeConfig[]
+}
+
+model User {
+  id             String        @id @default(cuid())
+  tenantId       String
+  orgId          String
+  email          String
+  name           String
+  avatarUrl      String?
+  role           UserRole      @default(SALES)
+  status         String        @default("active")
+  passwordHash   String
+  lastLoginAt    DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  behaviorLogs   BehaviorLog[]
+  ownedCompanies Company[]     @relation("CompanyOwner")
+  ownedLeads     Lead[]        @relation("LeadOwner")
+  ownedProjects  Project[]     @relation("ProjectOwner")
+  tasks          Task[]        @relation("TaskOwner")
+  org            Org           @relation(fields: [orgId], references: [id])
+  tenant         Tenant        @relation(fields: [tenantId], references: [id])
+  sessions       UserSession[]
+  ownedVisits    Visit[]       @relation("VisitOwner")
+
+  @@unique([tenantId, email])
+  @@index([tenantId, orgId])
+}
+
+model Org {
+  id        String    @id @default(cuid())
+  tenantId  String
+  name      String
+  parentId  String?
+  settings  Json      @default("{}")
+  createdAt DateTime  @default(now())
+  goals     Goal[]
+  leads     Lead[]
+  parent    Org?      @relation("OrgHierarchy", fields: [parentId], references: [id])
+  children  Org[]     @relation("OrgHierarchy")
+  projects  Project[]
+  tasks     Task[]
+  tenant    Tenant    @relation(fields: [tenantId], references: [id])
+  users     User[]
+  visits    Visit[]
+
+  @@index([tenantId])
+}
+
+model UserSession {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+}
+
+model Lead {
+  id                String     @id @default(cuid())
+  tenantId          String
+  orgId             String?
+  ownerId           String
+  companyId         String
+  contactId         String?
+  visitId           String?
+  name              String
+  industry          String     @default("education")
+  status            LeadStatus @default(FOLLOWING)
+  source            String     @default("cold_call")
+  contactName       String?
+  contactPhone      String?
+  contactPosition   String?
+  contactEmail      String?
+  completenessScore Int        @default(0)
+  missingFields     String[]   @default([])
+  aiExtracted       Boolean    @default(false)
+  confidenceScore   Float?
+  humanInfo         Json       @default("{}")
+  businessInfo      Json       @default("{}")
+  financeInfo       Json       @default("{}")
+  notes             String?
+
+  // 综合评分
+  score      Int?
+  grade      String? // A / B / C
+  assessedAt DateTime?
+  assessedBy String? // userId 或 'AI'
+
+  // 跟进统计
+  followUpCount  Int       @default(0)
+  lastFollowUpAt DateTime?
+
+  // 流失
+  lostReason String?
+
+  convertedAt        DateTime?
+  convertedProjectId String?             @unique
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  deletedAt          DateTime?
+  owner              User                @relation("LeadOwner", fields: [ownerId], references: [id])
+  org                Org?                @relation(fields: [orgId], references: [id])
+  tenant             Tenant              @relation(fields: [tenantId], references: [id])
+  company            Company             @relation(fields: [companyId], references: [id])
+  contact            Contact?            @relation(fields: [contactId], references: [id])
+  sourceVisit        Visit?              @relation("VisitToLead", fields: [visitId], references: [id])
+  relatedVisits      Visit[]             @relation("LeadToVisit")
+  convertedProject   Project?            @relation("LeadConvertedProject", fields: [convertedProjectId], references: [id])
+  followUps          LeadFollowUp[]
+  assessmentJobs     LeadAssessmentJob[]
+
+  @@index([tenantId, ownerId])
+  @@index([tenantId, orgId])
+  @@index([tenantId, companyId])
+  @@index([tenantId, status])
+  @@index([tenantId, completenessScore])
+  @@index([tenantId, score])
+  @@index([tenantId, grade])
+  @@index([tenantId, lastFollowUpAt])
+  @@index([tenantId, deletedAt])
+}
+
+model LeadFollowUp {
+  id                 String    @id @default(cuid())
+  tenantId           String
+  orgId              String?
+  ownerId            String
+  leadId             String
+  content            String
+  channel            String // phone / wechat / email / visit / other
+  outcome            String?
+  nextAction         String?
+  nextActionDeadline DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  lead               Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  tenant             Tenant    @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, leadId, createdAt])
+}
+
+model LeadAssessmentJob {
+  id          String    @id @default(cuid())
+  tenantId    String
+  leadId      String
+  status      String    @default("pending") // pending / running / completed / failed
+  result      Json?
+  error       String?
+  score       Int?
+  grade       String?
+  createdAt   DateTime  @default(now())
+  completedAt DateTime?
+  lead        Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  tenant      Tenant    @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, leadId, createdAt])
+}
+
+model Project {
+  id               String   @id @default(cuid())
+  tenantId         String
+  orgId            String?
+  ownerId          String
+  companyId        String?
+  sourceLeadId     String?
+  name             String
+  industry         String   @default("education")
+  amount           Decimal? @db.Decimal(15, 2)
+  status           String   @default("following") // following / stale / won / lost
+  milestone        Int      @default(0)
+  milestoneHistory Json     @default("[]")
+  humanInfo        Json     @default("{}")
+  businessInfo     Json     @default("{}")
+  financeInfo      Json     @default("{}")
+  evidence         Json     @default("[]")
+
+  /// 客观证据链：销售在口述中必须包含 AI 审计认可的事实片段，才能激活对应的里程碑
+  /// 结构示例: [{ milestone: 2, verifiedAt: "2026-06-11", timelineEventId: "clx...", evidenceSegment: "原文片段" }]
+  evidenceChain Json @default("[]")
+
+  decisionMap           Json               @default("{}")
+  healthScore           Int?               @default(60)
+  healthHistory         Json               @default("[]")
+  healthRadar           Json               @default("{}")
+  urgency               Urgency            @default(MEDIUM)
+  nextFollowUp          DateTime?
+  lastVisitTime         DateTime?
+  isStale               Boolean            @default(false)
+  staleSince            DateTime?
+  staleReason           String?
+  // V6.1 新增：项目类型（关联 ProjectTypeConfig）与"等待客户"状态
+  projectType           String             @default("software_mid")
+  waitingStatus         String? // awaiting_tender/awaiting_semester/awaiting_budget/awaiting_funding/awaiting_approval/awaiting_meeting
+  waitingSince          DateTime?
+  waitingNote           String?
+  winProbability        Int?
+  probabilityConfidence Float?             @default(1.0)
+  probabilityHistory    Json               @default("[]")
+  dataQuality           DataQuality        @default(COMPLETE)
+  missingFields         String[]           @default([])
+  aiExtracted           Boolean            @default(false)
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+  closedAt              DateTime?
+  lostInfo              Json?
+  deletedAt             DateTime?
+  snapshots             CustomerSnapshot[]
+  company               Company?           @relation(fields: [companyId], references: [id])
+  sourceLead            Lead?              @relation("LeadConvertedProject")
+  owner                 User               @relation("ProjectOwner", fields: [ownerId], references: [id])
+  org                   Org?               @relation(fields: [orgId], references: [id])
+  tenant                Tenant             @relation(fields: [tenantId], references: [id])
+  contacts              ProjectContact[]
+  tasks                 Task[]
+  timelineEvents        TimelineEvent[]
+  visits                Visit[]
+  visitClosures         VisitClosure[]
+
+  @@index([tenantId, ownerId])
+  @@index([tenantId, orgId])
+  @@index([tenantId, companyId])
+  @@index([tenantId, status])
+  @@index([tenantId, milestone])
+  @@index([tenantId, isStale])
+  @@index([tenantId, healthScore])
+  @@index([tenantId, deletedAt])
+}
+
+model Company {
+  id                String    @id @default(cuid())
+  tenantId          String
+  name              String
+  industry          String?
+  scale             String?
+  region            String?
+  level             String?
+  address           String?
+  website           String?
+  contactPerson     String?
+  contactPhone      String?
+  notes             String?
+  status            String    @default("target") // target / following / won / lost
+  completenessScore Int       @default(0)
+  dataConfidence    String    @default("medium") // high / medium / low
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  ownerId           String?
+  assignedAt        DateTime?
+  source            String?
+  deletedAt         DateTime?
+  mergedIntoId      String? // 被合并到的主客户 ID（合并后本记录软删除）
+  owner             User?     @relation("CompanyOwner", fields: [ownerId], references: [id])
+  tenant            Tenant    @relation(fields: [tenantId], references: [id])
+  projects          Project[]
+  contacts          Contact[]
+  leads             Lead[]
+  visits            Visit[]
+  tasks             Task[]
+
+  @@index([tenantId, name])
+  @@index([tenantId, ownerId])
+  @@index([tenantId, status])
+  @@index([tenantId, deletedAt])
+}
+
+model Contact {
+  id              String           @id @default(cuid())
+  tenantId        String
+  name            String
+  position        String?
+  department      String?
+  companyId       String?
+  company         Company?         @relation(fields: [companyId], references: [id])
+  phone           String?
+  email           String?
+  wechat          String?
+  decisionRole    DecisionRole?
+  roleConfidence  String?
+  personalMotive  String?
+  roiConcern      String?
+  riskConcern     String?
+  pressurePoints  String?
+  howToReach      String?
+  howToPersuade   String?
+  aiTagged        Boolean          @default(false)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  tenant          Tenant           @relation(fields: [tenantId], references: [id])
+  projectContacts ProjectContact[]
+  leads           Lead[]
+
+  @@index([tenantId, name])
+  @@index([tenantId, companyId])
+  @@index([tenantId, decisionRole])
+}
+
+model ProjectContact {
+  id               String   @id @default(cuid())
+  projectId        String
+  contactId        String
+  role             String
+  attitude         Attitude @default(NEUTRAL)
+  trustLevel       Int?     @default(50)
+  personalMotive   String?
+  pressurePoints   String?
+  decisionTimeline String?
+  howToReach       String?
+  howToPersuade    String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  contact          Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  project          Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, contactId])
+  @@index([projectId])
+}
+
+model Visit {
+  id                 String        @id @default(cuid())
+  tenantId           String
+  orgId              String?
+  companyId          String?
+  projectId          String?
+  leadId             String?
+  ownerId            String
+  visitTime          DateTime
+  visitType          String
+  sceneType          String?
+  summary            String? // AI 扩写产物（不参与评分）
+  rawInput           String? // V6.1：销售原始记录（速记/转写原文），评分唯一依据
+  rawInputType       String? // V6.1：'transcript' | 'recap' | 'meeting' | 'note'
+  audioUrl           String?
+  audioTranscript    String?
+  consentConfirmed   Boolean       @default(false) // V6.1 Phase 3 录音合规：现场录音前已口头告知并取得同意
+  consentAt          DateTime? // 告知确认时间
+  attachments        Json          @default("[]")
+  aiAnalysis         Json          @default("{}")
+  extractedTasks     Json          @default("[]")
+  milestoneBefore    Int?
+  milestoneAfter     Int?
+  milestoneChanged   Boolean       @default(false)
+  nextAction         String?
+  nextActionDeadline DateTime?
+  contactName        String?
+  contactPosition    String?
+  contactRole        String?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  workflowStage      String        @default("DRAFT")
+  owner              User          @relation("VisitOwner", fields: [ownerId], references: [id])
+  org                Org?          @relation(fields: [orgId], references: [id])
+  company            Company?      @relation(fields: [companyId], references: [id])
+  project            Project?      @relation(fields: [projectId], references: [id])
+  relatedLead        Lead?         @relation("LeadToVisit", fields: [leadId], references: [id])
+  generatedLeads     Lead[]        @relation("VisitToLead")
+  tenant             Tenant        @relation(fields: [tenantId], references: [id])
+  closure            VisitClosure?
+
+  @@index([tenantId, companyId])
+  @@index([tenantId, projectId])
+  @@index([tenantId, leadId])
+  @@index([tenantId, orgId])
+  @@index([tenantId, ownerId])
+  @@index([tenantId, visitTime])
+}
+
+model VisitClosure {
+  id             String    @id @default(cuid())
+  visitId        String    @unique
+  projectId      String?
+  ownerId        String
+  hasPreparation Boolean   @default(false)
+  hasRecording   Boolean   @default(false)
+  hasSummary     Boolean   @default(false)
+  hasAiAnalysis  Boolean   @default(false)
+  hasFollowUp    Boolean   @default(false)
+  // V6.1 新增：AI 提取产物人工确认（闭环必要条件）
+  hasConfirmation Boolean  @default(false)
+  qualityScore   Int?      @default(0)
+  qualityFactors Json      @default("{}")
+  // V6.1 新增：B 轨 LLM rubric 评分与管理者抽检
+  rubricScore    Int?
+  rubricDetails  Json?
+  spotChecked    Boolean   @default(false)
+  spotCheckScore Int?
+  spotCheckBy    String?
+  spotCheckAt    DateTime?
+  closedAt       DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  project        Project?  @relation(fields: [projectId], references: [id])
+  visit          Visit     @relation(fields: [visitId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, closedAt])
+  @@index([ownerId, createdAt])
+  @@index([spotChecked, closedAt])
+}
+
+model Task {
+  id          String     @id @default(cuid())
+  tenantId    String
+  orgId       String?
+  companyId   String?
+  projectId   String?
+  ownerId     String
+  title       String
+  description String?
+  priority    Priority   @default(MEDIUM)
+  status      TaskStatus @default(PENDING)
+  source      String?
+  sourceId    String?
+  deadline    DateTime?
+  completedAt DateTime?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  owner       User       @relation("TaskOwner", fields: [ownerId], references: [id])
+  org         Org?       @relation(fields: [orgId], references: [id])
+  company     Company?   @relation(fields: [companyId], references: [id])
+  project     Project?   @relation(fields: [projectId], references: [id])
+  tenant      Tenant     @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, ownerId])
+  @@index([tenantId, orgId])
+  @@index([tenantId, companyId])
+  @@index([tenantId, status])
+  @@index([tenantId, deadline])
+}
+
+model MethodologyConfig {
+  id         String   @id @default(cuid())
+  tenantId   String
+  version    String
+  moduleType String
+  configJson Json
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  tenant     Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, moduleType, isActive])
+  @@index([tenantId, updatedAt])
+}
+
+model TimelineEvent {
+  id           String  @id @default(cuid())
+  tenantId     String
+  ownerId      String? // 先optional，后续通过脚本回填数据后再改为必填
+  orgId        String? // 先optional，后续通过脚本回填数据后再改为必填
+  customerId   String
+  customerType String  @default("company")
+  projectId    String?
+  eventType    String
+  eventSubtype String?
+  eventData    Json    @default("{}")
+
+  /// 核心认知载荷：由 Zod 强校验的语义洞察
+  cognitivePayload Json @default("{}")
+
+  /// 本次事件引发的实体状态变更快照（用于增量更新业务表）
+  mutations Json @default("{}")
+
+  /// 原始语音/视频转写流文本存放在 MinIO/S3 的指针
+  transcriptUrl String?
+
+  aiInsight   String?
+  // V6.1 新增：确认态（AI 提取的事实性内容默认待确认，确认后才作为事实消费）
+  factStatus  String   @default("confirmed") // 'confirmed' | 'pending_confirmation' | 'rejected'
+  confirmedBy String?
+  confirmedAt DateTime?
+  sourceType  String
+  sourceId    String?
+  sourceLabel String?
+  eventTime   DateTime
+  createdAt   DateTime @default(now())
+  project     Project? @relation(fields: [projectId], references: [id])
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, ownerId, eventTime])
+  @@index([tenantId, orgId, eventTime])
+  @@index([tenantId, customerId, eventTime])
+  @@index([tenantId, projectId, eventTime])
+  @@index([tenantId, eventType, createdAt])
+  @@index([tenantId, sourceType, sourceId])
+  @@index([tenantId, factStatus])
+}
+
+model CustomerSnapshot {
+  id             String   @id @default(cuid())
+  tenantId       String
+  customerId     String
+  projectId      String?
+  weeklySummary  String?
+  monthlySummary String?
+  quarterlyView  String?
+  currentStage   String?
+  stageDuration  Int?
+  healthScore    Int?
+  riskFlags      Json     @default("[]")
+  nextActions    Json     @default("[]")
+  generatedBy    String
+  generatedAt    DateTime @default(now())
+  expiresAt      DateTime
+  /// V6.1 新增：本快照覆盖到的时间轴水位线（增量快照依据）
+  coversUntil    DateTime?
+  project        Project? @relation(fields: [projectId], references: [id])
+  tenant         Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, customerId, generatedAt])
+  @@index([tenantId, projectId, generatedAt])
+  @@index([tenantId, expiresAt])
+}
+
+model KbDocument {
+  id          String    @id @default(cuid())
+  tenantId    String
+  fileName    String
+  storageKey  String
+  fileType    String
+  fileSize    Int
+  title       String?
+  description String?
+  tags        String[]  @default([])
+  category    String?
+  status      String    @default("active")
+  uploadedBy  String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  scope       String    @default("PERSONAL")
+  orgId       String?
+  chunks      KbChunk[]
+  tenant      Tenant    @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, category])
+  @@index([tenantId, status])
+}
+
+model KbChunk {
+  id         String                 @id @default(cuid())
+  documentId String
+  chunkIndex Int
+  content    String
+  metadata   Json                   @default("{}")
+  createdAt  DateTime               @default(now())
+  embedding  Unsupported("vector")?
+  document   KbDocument             @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+}
+
+model BehaviorLog {
+  id          String   @id @default(cuid())
+  tenantId    String
+  userId      String
+  type        String
+  score       Int      @default(0)
+  projectId   String?
+  visitId     String?
+  description String?
+  createdAt   DateTime @default(now())
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  user        User     @relation(fields: [userId], references: [id])
+
+  @@index([tenantId, userId, createdAt])
+  @@index([tenantId, type])
+  /// V6.1：同一拜访闭环积分只保留一条（upsert 幂等）。注意 visitId 为 null 时 Postgres 允许重复，仅对 visitId 非空的记录起约束
+  @@unique([tenantId, userId, visitId, type], name: "unique_visit_closure_log")
+}
+
+model Goal {
+  id            String   @id @default(cuid())
+  tenantId      String
+  orgId         String
+  userId        String?
+  name          String
+  type          String
+  targetValue   Float
+  currentValue  Float    @default(0)
+  periodType    String
+  periodYear    Int
+  periodMonth   Int?
+  periodQuarter Int?
+  status        String   @default("active")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  org           Org      @relation(fields: [orgId], references: [id])
+  tenant        Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, orgId])
+  @@index([tenantId, userId])
+}
+
+model AiConfig {
+  id          String   @id @default(cuid())
+  tenantId    String
+  name        String
+  provider    String
+  model       String
+  apiKey      String
+  apiEndpoint String?
+  temperature Float    @default(0.3)
+  maxTokens   Int      @default(4000)
+  isDefault   Boolean  @default(false)
+  enabled     Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, isDefault])
+}
+
+model ChatSession {
+  id           String        @id @default(cuid())
+  tenantId     String
+  userId       String
+  title        String?
+  context      Json          @default("{}")
+  messageCount Int           @default(0)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  messages     ChatMessage[]
+  tenant       Tenant        @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, userId, updatedAt])
+}
+
+model ChatMessage {
+  id          String      @id @default(cuid())
+  sessionId   String
+  role        String
+  content     String
+  toolCalls   Json?       @default("[]")
+  toolResults Json?       @default("[]")
+  latencyMs   Int?
+  model       String?
+  createdAt   DateTime    @default(now())
+  tenantId    String
+  session     ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  tenant      Tenant      @relation(fields: [tenantId], references: [id])
+
+  @@index([sessionId, createdAt])
+  @@index([tenantId])
+}
+
+/// V6.1 新增：AI 提取产物待确认队列（工作台收件箱）
+/// AI 提取的任务/需求/预算信号先入此表，人工确认后才落为正式业务数据
+model AiPendingItem {
+  id           String    @id @default(cuid())
+  tenantId     String
+  ownerId      String // 待谁确认
+  projectId    String?
+  visitId      String?
+  itemType     String // 'task' | 'key_request' | 'budget_signal' | 'competitor_mention'
+  itemData     Json // AI 提取的原始内容（含 evidence 锚定）
+  status       String    @default("pending") // 'pending' | 'confirmed' | 'modified' | 'rejected'
+  resolvedData Json?
+  resolvedBy   String?
+  resolvedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  tenant       Tenant    @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, ownerId, status])
+  @@index([tenantId, visitId, status])
+}
+
+/// V6.1 新增：项目类型配置（停滞阈值分档 + 阶段推进规则，替代硬编码）
+model ProjectTypeConfig {
+  id                       String   @id @default(cuid())
+  tenantId                 String
+  typeKey                  String // 'integration_large' | 'software_mid' | 'procurement_small' | 'default'
+  typeName                 String
+  attentionDays            Int      @default(14) // 超过则健康度扣分、标记待关注
+  staleDays                Int      @default(28) // 超过则进入停滞池
+  stageThresholds          Json     @default("[]") // 各阶段允许最大停留天数
+  advancementRules         Json     @default("{}") // 阶段推进规则，替代硬编码 ADVANCEMENT_RULES
+  effectiveFollowupMinScore Int     @default(40) // 质量分≥此值的闭环拜访才算"有效跟进"
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+  tenant                   Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, typeKey])
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  TENANT_ADMIN
+  DEPT_HEAD
+  SALES
+  VIEWER
+}
+
+enum LeadStatus {
+  NEW
+  FOLLOWING
+  CONVERTED
+  LOST
+  PAUSED
+}
+
+enum Urgency {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum DataQuality {
+  COMPLETE
+  PARTIAL
+  POOR
+}
+
+enum DecisionRole {
+  COACH
+  EVALUATOR
+  DECISION_MAKER
+  USER
+  GATEKEEPER
+}
+
+enum Attitude {
+  SUPPORTIVE
+  NEUTRAL
+  RESISTANT
+  UNKNOWN
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TaskStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+// ============================================
+// 审计日志（V3.1 新增：操作审计 + 登录历史）
+// ============================================
+
+/// 全量操作审计：所有写操作自动记录（Prisma middleware 写入）
+model AuditLog {
+  id          String   @id @default(cuid())
+  tenantId    String
+  userId      String? // null = 系统操作或未登录
+  userEmail   String? // 冗余存（删用户不丢审计）
+  action      String // CREATE / UPDATE / DELETE / LOGIN / LOGOUT / EXPORT / CONFIGURE / UPLOAD / DOWNLOAD / AI_CALL
+  entity      String? // Lead / Project / Visit / User / AiConfig ...
+  entityId    String?
+  description String? // 人类可读："创建客户：河南科技学院"
+  changes     Json? // { before: {field: old}, after: {field: new} }，仅 UPDATE
+  ip          String?
+  userAgent   String?
+  severity    String   @default("info") // info / warning / critical
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, userId, createdAt])
+  @@index([tenantId, action])
+  @@index([tenantId, severity])
+  @@index([entity, entityId])
+}
+
+/// 业务变更历史：记录客户/联系人/线索/商机关键字段变更
+model ChangeHistory {
+  id           String   @id @default(cuid())
+  tenantId     String
+  entityType   String // company / contact / lead / project
+  entityId     String
+  fieldName    String
+  oldValue     String?
+  newValue     String?
+  changedBy    String // userId
+  changeSource String   @default("manual") // manual / ai / import / merge
+  createdAt    DateTime @default(now())
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, entityType, entityId, createdAt])
+}
+
+/// 登录历史：所有登录尝试都记录（成功/失败都记）
+model LoginHistory {
+  id            String   @id @default(cuid())
+  tenantId      String? // null = 登录失败（账号不存在）
+  userId        String?
+  email         String // 即使失败也记，便于检测爆破
+  ip            String
+  userAgent     String?
+  status        String // success / wrong_password / user_not_found / disabled / kicked
+  sessionId     String? // 成功后关联 session
+  failureReason String?
+  createdAt     DateTime @default(now())
+
+  @@index([email, createdAt])
+  @@index([ip, createdAt])
+  @@index([tenantId, createdAt])
+  @@index([status, createdAt])
+}
