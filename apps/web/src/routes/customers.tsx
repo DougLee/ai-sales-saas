@@ -7,6 +7,7 @@ import { useDebouncedValue } from '../hooks/use-debounced-value.js'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { entityRouteTo } from '../lib/entity-links.js'
 import Drawer from '../components/ui/drawer.js'
+import VisitDetailDrawer from '../components/visits/visit-detail-drawer.js'
 import CustomerForm from '../components/forms/customer-form.js'
 import ProjectForm from '../components/forms/project-form.js'
 import LeadForm from '../components/forms/lead-form.js'
@@ -82,6 +83,7 @@ export default function Customers() {
   const [projectFormOpen, setProjectFormOpen] = useState(false)
   const [leadFormOpen, setLeadFormOpen] = useState(false)
   const [mergeOpen, setMergeOpen] = useState(false)
+  const [visitDetailId, setVisitDetailId] = useState<string | undefined>(undefined)
   const [searchParams, setSearchParams] = useSearchParams()
   const [statusFilter, setStatusFilter] = useState<string>(searchParams.get('status') || 'all')
 
@@ -776,7 +778,7 @@ export default function Customers() {
                   <div
                     key={v.id}
                     className="flex items-center gap-3 rounded-lg bg-surface px-3 py-2 cursor-pointer hover:bg-surface-elevated/50 transition-colors"
-                    onClick={() => navigate(entityRouteTo('visit', v.id))}
+                    onClick={() => setVisitDetailId(v.id)}
                   >
                     <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${
                       v.visitType === 'offline' ? 'bg-primary/10 text-primary' :
@@ -876,6 +878,8 @@ export default function Customers() {
           </div>
         )}
       </Drawer>
+
+      <VisitDetailDrawer visitId={visitDetailId} onClose={() => setVisitDetailId(undefined)} />
 
       <CustomerForm
         open={openForm}

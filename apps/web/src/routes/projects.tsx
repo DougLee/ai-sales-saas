@@ -11,6 +11,7 @@ import AiEntryButton from '../components/ai/ai-entry-button.js'
 import ProjectForm from '../components/forms/project-form.js'
 import VisitForm from '../components/forms/visit-form.js'
 import Drawer from '../components/ui/drawer.js'
+import VisitDetailDrawer from '../components/visits/visit-detail-drawer.js'
 import { EmptyState, LoadingState, ErrorState } from '../components/ui/states.js'
 import { useConfirmDialog } from '../hooks/use-confirm-dialog.js'
 import { TimelineView } from '../components/timeline/timeline-view.js'
@@ -189,6 +190,7 @@ export default function Projects() {
   const [editingItem, setEditingItem] = useState<Partial<Project> | undefined>(undefined)
   const [detailId, setDetailId] = useState<string | undefined>(undefined)
   const [visitFormOpen, setVisitFormOpen] = useState(false)
+  const [visitDetailId, setVisitDetailId] = useState<string | undefined>(undefined)
   const { data, isLoading, error } = useProjects()
   const del = useDeleteProject()
   const update = useUpdateProject()
@@ -628,7 +630,7 @@ export default function Projects() {
                       <div
                         key={v.id}
                         className="flex items-center gap-3 rounded-lg bg-surface px-3 py-2 cursor-pointer hover:bg-surface-elevated/50 transition-colors"
-                        onClick={() => navigate(entityRouteTo('visit', v.id))}
+                        onClick={() => setVisitDetailId(v.id)}
                       >
                         <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${
                           v.visitType === 'offline' ? 'bg-primary/10 text-primary' :
@@ -697,6 +699,8 @@ export default function Projects() {
           </div>
         )}
       </Drawer>
+
+      <VisitDetailDrawer visitId={visitDetailId} onClose={() => setVisitDetailId(undefined)} />
 
       <VisitForm
         open={visitFormOpen}
