@@ -11,6 +11,7 @@ import { scanOutput } from './core/guardrails.js'
 import { findExpert } from './experts/registry.js'
 import { resolveSkills } from './core/agent-skill-router.js'
 import { skillRegistry } from './skills/index.js'
+import { extractRecommendedCandidates, handleCustomerEnroll } from './skills/crm/customer-enroll.util.js'
 import { semanticSearch } from '../knowledge-base/kb-embedder.js'
 import { AppError } from '../errors/app-error.js'
 import { ErrorCode } from '../errors/error-codes.js'
@@ -33,6 +34,7 @@ const INTENT_LABELS: Record<string, string> = {
   illusion_detection: '项目风险识别',
   sales_coaching: '销售辅导',
   territory_expansion: '市场开拓',
+  customer_enroll: '目标客户入库',
   bidding_monitor: '招投标监测',
   system_help: '系统使用帮助',
   general_chat: '一般对话',
@@ -142,6 +144,7 @@ export async function chat(req: FastifyRequest, reply: FastifyReply) {
     const ALLOWED_INTENTS = new Set([
       'background_research',   // 目标客户背景调查
       'territory_search',      // 目标客户检索
+      'customer_enroll',       // 目标客户入库
       'territory_expansion',   // 市场开拓
       'visit_analysis',        // 拜访复盘
       'visit_preparation',     // 拜访准备
@@ -214,6 +217,20 @@ export async function chat(req: FastifyRequest, reply: FastifyReply) {
       sessionId,
     }
 
+    // customer_enroll：在 LLM 生成前执行入库（lead-action），结果注入 prompt 供小销确认
+    let enrollNote: string | null = null
+    if (intent.intent === 'customer_enroll') {
+      try {
+        enrollNote = await handleCustomerEnroll({
+          userMessage: lastMessage.content,
+          sessionId,
+          skillContext,
+        })
+      } catch (e) {
+        chatLogger.warn({ err: e }, 'customer_enroll handler failed')
+      }
+    }
+
     const skillResults = await Promise.all(
       skillCalls.map(async (call) => {
         const start = Date.now()
@@ -241,6 +258,11 @@ export async function chat(req: FastifyRequest, reply: FastifyReply) {
       availableTools: skillRegistry.list().map((s) => s.id),
       disableTools: false,
     })
+
+    // 入库结果注入（customer_enroll 已在上游执行 lead-action）
+    if (enrollNote) {
+      system += `\n\n【入库结果】${enrollNote}\n请用一两句话向用户确认刚才的入库结果（强调已落入公海池、可信度中、待销售核实），只复述结果里提到的客户，不要编造。`
+    }
 
     // 注入 Skill 执行结果
     const successfulSkills = skillResults.filter((sr) => sr.result.success && sr.result.data)
@@ -324,6 +346,22 @@ export async function chat(req: FastifyRequest, reply: FastifyReply) {
       },
       'Chat stream completed',
     )
+
+    // 推荐类意图：抽取候选目标客户并持久化，供下一轮「入库」使用（响应已 end()，用户无感知）
+    if (intent.intent === 'territory_search' || intent.intent === 'territory_expansion') {
+      try {
+        const candidates = await extractRecommendedCandidates(assistantText)
+        if (candidates.length > 0) {
+          await agentMemory.setJSON(sessionId, 'recommended-candidates', {
+            candidates,
+            savedAt: new Date().toISOString(),
+          })
+          chatLogger.info({ count: candidates.length }, 'Recommended candidates persisted')
+        }
+      } catch (e) {
+        chatLogger.warn({ err: e }, 'candidate extraction/persist failed')
+      }
+    }
 
     // 保存完整的助手回复内容到 Redis + DB（await 确保落盘，失败可感知）
     try {

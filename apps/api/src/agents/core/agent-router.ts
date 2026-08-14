@@ -25,6 +25,7 @@ const IntentValueSchema = z.union([
   z.literal('illusion_detection'),
   z.literal('sales_coaching'),
   z.literal('territory_expansion'),
+  z.literal('customer_enroll'),
   z.literal('bidding_monitor'),
   z.literal('system_help'),
   z.literal('general_chat'),
@@ -146,6 +147,7 @@ export async function routeIntent(
 - **illusion_detection**: 项目风险识别。判断一个商机是否靠谱、是否存在假项目信号。
 - **sales_coaching**: 销售辅导。销售技巧、心态调整、新人培训、破局策略。
 - **territory_expansion**: 市场开拓。如何开拓新市场、新区域、陌生拜访策略。
+- **customer_enroll**: 目标客户入库。用户要求把上一轮推荐的目标客户（或直接指定的客户）入库建档、加入公海池，例如"把第2个入库""全部入库""把XX公司入库"。
 - **bidding_monitor**: 招投标监测。招标信息、中标公告、竞争对手投标。
 - **system_help**: 系统使用帮助。怎么用系统、功能在哪、怎么操作。
 - **general_chat**: 其他一般性对话，不归属于以上任何一类。

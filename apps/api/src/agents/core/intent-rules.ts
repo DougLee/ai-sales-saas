@@ -19,6 +19,12 @@ const COMMON_PATTERNS: Array<{
   }
 }> = [
   {
+    name: 'customer_enroll',
+    intent: 'customer_enroll',
+    confidence: 0.9,
+    patterns: [/入库|入公海|建档/],
+  },
+  {
     name: 'territory_search',
     intent: 'territory_search',
     confidence: 0.85,

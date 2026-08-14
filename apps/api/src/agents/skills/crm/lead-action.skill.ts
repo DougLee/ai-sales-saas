@@ -24,6 +24,13 @@ export const leadActionSkill: SkillDefinition<
   outputSchema: LeadActionOutputSchema,
   execute: async ({ params, context }) => {
     const p = context.prisma
+    // 同名去重：租户内已存在同名公司则直接复用，避免重复入库产生垃圾
+    const existing = await p.company.findFirst({
+      where: { name: params.name, tenantId: context.tenantId },
+    })
+    if (existing) {
+      return { success: true, data: { company: existing, reused: true } }
+    }
     const company = await p.company.create({
       data: {
         name: params.name,
@@ -37,6 +44,6 @@ export const leadActionSkill: SkillDefinition<
         tenantId: context.tenantId,
       } as never,
     })
-    return { success: true, data: { company } }
+    return { success: true, data: { company, reused: false } }
   },
 }
