@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Plus, Loader2, Pencil, Trash2, ChevronRight, Calendar, Flag, CheckCircle2, AlertTriangle, Building2, Briefcase } from 'lucide-react'
+import { Plus, Loader2, Pencil, Trash2, ChevronRight, Calendar, Flag, CheckCircle2, AlertTriangle, Building2, Briefcase, Magnet } from 'lucide-react'
 import { useProjects, useProject, useDeleteProject, useUpdateProject, WAITING_STATUSES, type Project, type WaitingStatus } from '../hooks/use-projects.js'
 import { useDecisionChain, useUpdateDecisionChain } from '../hooks/use-decision-chain.js'
 import { DecisionChainMap } from '../components/projects/decision-chain-map.js'
@@ -296,18 +296,19 @@ export default function Projects() {
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold text-text-primary">商机管理</h2>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => navigate('/leads')}
+            className="flex items-center gap-1.5 rounded-xl border border-border bg-surface px-4 py-2 text-sm text-text-secondary transition-colors hover:border-primary/40 hover:text-primary"
+            title="商机由满足转化条件的线索生成，不支持直接新建"
+          >
+            <Magnet size={15} /> 商机由线索转化，去线索页创建
+          </button>
           <AiEntryButton
             prompt="帮我看看当前商机 Pipeline，哪些需要优先推进"
             label="问小销"
             variant="primary"
             className="rounded-xl px-4 py-2 text-sm"
           />
-          <button
-            onClick={() => { setEditingItem(undefined); setOpen(true) }}
-            className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90"
-          >
-            <Plus size={16} /> 新建商机
-          </button>
         </div>
       </div>
       <div className="rounded-2xl border border-border bg-surface">
@@ -355,8 +356,17 @@ export default function Projects() {
 
         {!isLoading && !error && filteredItems.length === 0 && (
           <EmptyState
-            title="暂无商机数据"
-            description="AI 将自动分析线索转化潜力"
+            icon={Magnet}
+            title="暂无商机"
+            description="商机由满足条件（人/事/财齐备）的线索转化而来，不支持直接新建。先去线索页创建并培育线索吧。"
+            action={
+              <button
+                onClick={() => navigate('/leads')}
+                className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary/90"
+              >
+                <Plus size={16} /> 去创建线索
+              </button>
+            }
           />
         )}
 

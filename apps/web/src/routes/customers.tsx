@@ -9,7 +9,6 @@ import { entityRouteTo } from '../lib/entity-links.js'
 import Drawer from '../components/ui/drawer.js'
 import VisitDetailDrawer from '../components/visits/visit-detail-drawer.js'
 import CustomerForm from '../components/forms/customer-form.js'
-import ProjectForm from '../components/forms/project-form.js'
 import LeadForm from '../components/forms/lead-form.js'
 import AiEntryButton from '../components/ai/ai-entry-button.js'
 import { EmptyState, LoadingState, ErrorState } from '../components/ui/states.js'
@@ -80,7 +79,6 @@ export default function Customers() {
   const [detailId, setDetailId] = useState<string | undefined>(undefined)
   const [openForm, setOpenForm] = useState(false)
   const [editingItem, setEditingItem] = useState<ReturnType<typeof useCompany>['data'] | undefined>(undefined)
-  const [projectFormOpen, setProjectFormOpen] = useState(false)
   const [leadFormOpen, setLeadFormOpen] = useState(false)
   const [mergeOpen, setMergeOpen] = useState(false)
   const [visitDetailId, setVisitDetailId] = useState<string | undefined>(undefined)
@@ -401,17 +399,10 @@ export default function Customers() {
                 <div className="flex items-center gap-1">
                   <button
                     onClick={() => setLeadFormOpen(true)}
-                    className="flex items-center gap-1 rounded-lg bg-secondary px-2.5 py-1 text-xs font-medium text-white hover:bg-secondary/90 transition-colors"
-                    title="新建线索"
+                    className="flex items-center gap-1 rounded-lg bg-primary px-2.5 py-1 text-xs font-medium text-white hover:bg-primary/90 transition-colors"
+                    title="新建线索（商机由线索转化而来）"
                   >
                     <Plus size={12} /> 新建线索
-                  </button>
-                  <button
-                    onClick={() => setProjectFormOpen(true)}
-                    className="flex items-center gap-1 rounded-lg bg-primary px-2.5 py-1 text-xs font-medium text-white hover:bg-primary/90 transition-colors"
-                    title="新建商机"
-                  >
-                    <Plus size={12} /> 新建商机
                   </button>
                   {canAssign && (
                     <button
@@ -885,11 +876,6 @@ export default function Customers() {
         open={openForm}
         onClose={() => { setOpenForm(false); setEditingItem(undefined) }}
         initialData={editingItem?.company}
-      />
-      <ProjectForm
-        open={projectFormOpen}
-        onClose={() => setProjectFormOpen(false)}
-        prefilledCompanyId={detailId}
       />
       <LeadForm
         open={leadFormOpen}
