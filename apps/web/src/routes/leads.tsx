@@ -102,6 +102,29 @@ function checkReadiness(lead: Lead) {
   return checks
 }
 
+function checkConvertReadiness(lead: Lead): string[] {
+  const missing: string[] = []
+  if ((lead.score ?? 0) < 60 && lead.completenessScore < 60) {
+    missing.push('评分或完整度需达到 60 分以上')
+  }
+  if (!lead.contactPhone && !lead.contactEmail) {
+    missing.push('至少需要一个有效联系方式（电话或邮箱）')
+  }
+  if (!lead.businessInfo?.requirements?.trim()) {
+    missing.push('事：需求方向需明确')
+  }
+  if (lead.followUpCount < 1) {
+    missing.push('至少完成一次有效跟进')
+  }
+  if (!lead.humanInfo?.decisionMaker?.trim()) {
+    missing.push('人：需识别决策链中的关键角色')
+  }
+  if (!lead.financeInfo?.budget?.trim() && !lead.financeInfo?.budgetSource?.trim()) {
+    missing.push('财：需确认预算信号')
+  }
+  return missing
+}
+
 export default function Leads() {
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebouncedValue(search)
@@ -128,6 +151,8 @@ export default function Leads() {
   const [assessmentJobId, setAssessmentJobId] = useState<string | undefined>(undefined)
   const [forceReason, setForceReason] = useState('')
   const [showForce, setShowForce] = useState(false)
+  const [convertBlockOpen, setConvertBlockOpen] = useState(false)
+  const [convertBlockReasons, setConvertBlockReasons] = useState<string[]>([])
   const navigate = useNavigate()
 
   const isAdmin = useHasRole('TENANT_ADMIN', 'SUPER_ADMIN', 'DEPT_HEAD')
@@ -168,6 +193,12 @@ export default function Leads() {
   }
 
   const handleConvert = async (lead: Lead, force = false) => {
+    const missing = checkConvertReadiness(lead)
+    if (missing.length > 0) {
+      setConvertBlockReasons(missing)
+      setConvertBlockOpen(true)
+      return
+    }
     // 强制转化已有"填原因"的二次步骤，普通转化需要确认（单击即执行的防护）
     if (!force && !(await confirmDialog.confirm({
       title: '转化为商机',
@@ -687,6 +718,30 @@ export default function Leads() {
           </div>
         </Modal>
       )}
+
+      <Modal open={convertBlockOpen} onClose={() => setConvertBlockOpen(false)} title="暂不满足转化条件">
+        <div className="space-y-4">
+          <p className="text-sm text-text-secondary">
+            线索转化商机前，需要补全以下信息：
+          </p>
+          <ul className="space-y-2">
+            {convertBlockReasons.map((reason) => (
+              <li key={reason} className="flex items-center gap-2 text-sm text-warning">
+                <AlertCircle size={16} />
+                {reason}
+              </li>
+            ))}
+          </ul>
+          <div className="flex justify-end">
+            <button
+              onClick={() => setConvertBlockOpen(false)}
+              className="rounded-xl bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90"
+            >
+              我知道了
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       {confirmDialog.dialog}
     </div>

@@ -126,6 +126,7 @@ export function useUpdateCompany() {
       put<{ item: Company }>(`/api/companies/${id}`, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['companies'] })
+      qc.invalidateQueries({ queryKey: ['company'] })
       toast.success('客户更新成功')
     },
     onError: (err) => toast.error((err as Error).message || '更新失败'),

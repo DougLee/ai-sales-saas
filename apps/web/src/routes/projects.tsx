@@ -711,7 +711,16 @@ export default function Projects() {
             queryClient.invalidateQueries({ queryKey: ['project', detailId] })
           }
         }}
-        initialData={detailItem ? { projectId: detailItem.id, project: { name: detailItem.name } } : undefined}
+        initialData={
+          detailItem
+            ? {
+                projectId: detailItem.id,
+                project: { name: detailItem.name },
+                companyId: detailItem.company?.id,
+                company: detailItem.company,
+              }
+            : undefined
+        }
       />
 
       {confirmDialog.dialog}

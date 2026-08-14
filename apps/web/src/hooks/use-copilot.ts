@@ -140,7 +140,11 @@ export function useCopilot() {
           content: m.content,
           createdAt: new Date(m.createdAt),
         }))
-        chat.setMessages((prev) => [...olderMessages, ...prev])
+        chat.setMessages((prev) => {
+          // 按 id 去重：避免分页边界重叠/重复加载导致同一条消息出现两次（React duplicate key）
+          const existingIds = new Set(prev.map((m) => m.id))
+          return [...olderMessages.filter((m) => !existingIds.has(m.id)), ...prev]
+        })
         setHistoryState({
           oldestCursor: res.nextCursor,
           hasMore: res.hasMore,

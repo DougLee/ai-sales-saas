@@ -178,6 +178,7 @@ export default function VisitForm({ open, onClose, initialData }: VisitFormProps
         <CompanySelect
           value={companyId}
           onChange={setCompanyId}
+          disabled={!!initialData?.company?.id}
           required
           label="所属客户"
           placeholder="请选择所属客户"
