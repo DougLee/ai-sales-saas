@@ -33,8 +33,8 @@ export const DecisionNodeSchema = z.object({
   attitude: z.union([DecisionNodeAttitudeSchema, z.string()]).default('unknown'),
   influence: z.number().min(0).max(100).optional(),
   weight: z.number().min(0).max(100).optional(),
-  title: z.string().optional(),
-  department: z.string().optional(),
+  title: z.string().nullish(),
+  department: z.string().nullish(),
   contactInfo: z.object({
     phone: z.string().nullish(),
     email: z.string().nullish(),

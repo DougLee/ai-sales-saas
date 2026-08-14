@@ -90,6 +90,10 @@ export async function create(req: FastifyRequest, reply: FastifyReply) {
       return reply.status(400).send({ success: false, error: '关联客户不存在' })
     }
 
+    // 手动录入时 summary 就是销售原始记录；若未传 rawInput，把 summary 落到 rawInput 供 AI 分析
+    const rawInput = body.rawInput?.trim() || body.summary?.trim() || undefined
+    const rawInputType = body.rawInputType || (body.summary?.trim() ? 'note' : undefined)
+
     const visit = await prisma.visit.create({
       data: {
         ...body,
@@ -99,6 +103,8 @@ export async function create(req: FastifyRequest, reply: FastifyReply) {
         leadId: body.leadId || undefined,
         visitTime: new Date(body.visitTime),
         nextActionDeadline: body.nextActionDeadline ? new Date(body.nextActionDeadline) : undefined,
+        rawInput,
+        rawInputType,
         // V6.1 录音合规：标记了告知同意才记录告知时间
         consentAt: body.consentConfirmed ? new Date() : undefined,
         workflowStage: 'DRAFT',
@@ -145,6 +151,15 @@ export async function create(req: FastifyRequest, reply: FastifyReply) {
       sourceId: user.id,
       sourceLabel: '创建拜访',
     })
+
+    // 手动录入（含 summary）也触发 AI 分析，自动提取里程碑推进所需字段（fail-soft）
+    if (rawInput) {
+      try {
+        await runVisitAnalysis(prisma, visit.id, user.id)
+      } catch (err) {
+        req.log.warn({ err, visitId: visit.id }, 'auto analysis after create failed (non-blocking)')
+      }
+    }
 
     reply.send({ success: true, data: visit })
   } catch (err) {

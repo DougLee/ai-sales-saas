@@ -23,15 +23,21 @@ const VisitAnalysisSchema = z.object({
   milestoneProgress: z.string().optional(),
   decisionChain: z.array(z.object({
     name: z.string(),
-    role: z.string(),
-    attitude: z.string(),
-    insight: z.string(),
+    role: z.string().optional(),
+    attitude: z.string().optional(),
+    insight: z.string().optional(),
   })).optional(),
   keyInfo: z.object({
+    firstContact: z.string().optional(),
     budget: z.string().optional(),
+    price: z.string().optional(),
     timeline: z.string().optional(),
+    solution: z.string().optional(),
     competitors: z.array(z.string()).optional(),
     painPoints: z.array(z.string()).optional(),
+  }).optional(),
+  evidence: z.object({
+    bidResult: z.string().optional(),
   }).optional(),
   risks: z.array(z.string()).optional(),
   nextActions: z.array(z.string()).optional(),
@@ -90,11 +96,12 @@ ${content}
 
 请输出以下维度的分析结果（JSON格式）：
 1. milestoneProgress: 里程碑进展判断（如"从M2推进到M3，痛点已确认"）
-2. decisionChain: 决策链洞察（name, role, attitude, insight）
-3. keyInfo: 关键信息（budget预算, timeline时间线, competitors竞品, painPoints痛点）
-4. risks: 风险预警列表
-5. nextActions: 下一步行动建议列表
-6. sentiment: 整体情绪判断（积极/中性/消极）
+2. decisionChain: 决策链洞察。必须提取拜访记录中提到的所有关键人物，包括：name（姓名/姓氏+职务，如"王主任"）、role（职务/角色，如"教务处处长"）、attitude（对项目态度：支持/中立/反对/未表态/犹豫）、insight（关键洞察/诉求/顾虑）。不要遗漏任何提到的人物。
+3. keyInfo: 关键信息（firstContact首次接触方式如电话/拜访/引荐/展会, budget客户预算, price我方报价, timeline时间线, solution方案要点, competitors竞品, painPoints痛点）
+4. evidence: 证据信息（bidResult中标结果或签约信息，如"已中标，金额128万"或"已签约"）
+5. risks: 风险预警列表
+6. nextActions: 下一步行动建议列表
+7. sentiment: 整体情绪判断（积极/中性/消极）
 
 【提取纪律】
 - nextActions 最多 5 条，每条是一个独立动作；同一件事不得拆成多条或换角度重复（如"提交方案初稿"只保留一条最完整的）
@@ -118,6 +125,17 @@ ${content}
     analysis = VisitAnalysisSchema.parse(JSON.parse(clean))
   } catch {
     analysis = { milestoneProgress: text.slice(0, 500) }
+  }
+
+  // 兜底：如果 AI 没提取到中标结果，但原文有明显中标/签约表述，用正则补提
+  if (!analysis.evidence?.bidResult?.trim()) {
+    const bidMatch = content.match(/(?:我方|我们|本公司|公司)\s*(?:成功)?\s*(?:中标|中标金额|中标金额|签约|签署合同|合同金额)[：:]?\s*([^\n。；]+)/)
+    if (bidMatch?.[1]) {
+      analysis = {
+        ...analysis,
+        evidence: { ...(analysis.evidence || {}), bidResult: bidMatch[1].trim().slice(0, 200) },
+      }
+    }
   }
 
   // V6.1 节点4：AI 扩写摘要（summary 为空或过短时生成）——AI 产物，不参与评分
@@ -207,6 +225,50 @@ ${content}
     const knownCompetitors = Array.isArray((project.businessInfo as Record<string, unknown>)?.competitors)
       ? ((project.businessInfo as Record<string, unknown>).competitors as unknown[])
       : []
+    let knownFirstContact = (project.humanInfo as Record<string, unknown>)?.firstContact
+    let knownSolution = (project.businessInfo as Record<string, unknown>)?.solution
+    let knownPrice = (project.financeInfo as Record<string, unknown>)?.price
+    let knownBidResult = (project.evidence as Record<string, unknown>)?.bidResult
+
+    if (analysis.keyInfo?.firstContact?.trim() && !knownFirstContact) {
+      await createAutoAppliedItem(prisma, {
+        ...base,
+        itemType: 'first_contact',
+        itemData: { content: analysis.keyInfo.firstContact.trim() },
+      })
+      knownFirstContact = analysis.keyInfo.firstContact.trim()
+      pendingItemsCreated++
+    }
+
+    if (analysis.keyInfo?.solution?.trim() && !knownSolution) {
+      await createAutoAppliedItem(prisma, {
+        ...base,
+        itemType: 'solution_summary',
+        itemData: { content: analysis.keyInfo.solution.trim() },
+      })
+      knownSolution = analysis.keyInfo.solution.trim()
+      pendingItemsCreated++
+    }
+
+    if (analysis.keyInfo?.price?.trim() && !knownPrice) {
+      await createAutoAppliedItem(prisma, {
+        ...base,
+        itemType: 'price_quote',
+        itemData: { content: analysis.keyInfo.price.trim() },
+      })
+      knownPrice = analysis.keyInfo.price.trim()
+      pendingItemsCreated++
+    }
+
+    if (analysis.evidence?.bidResult?.trim() && !knownBidResult) {
+      await createAutoAppliedItem(prisma, {
+        ...base,
+        itemType: 'bid_result',
+        itemData: { content: analysis.evidence.bidResult.trim() },
+      })
+      knownBidResult = analysis.evidence.bidResult.trim()
+      pendingItemsCreated++
+    }
 
     if (analysis.keyInfo?.painPoints?.length) {
       for (const pain of analysis.keyInfo.painPoints) {
@@ -234,9 +296,14 @@ ${content}
       }
     }
 
-    if (analysis.decisionChain?.length) {
-      await prisma.aiPendingItem.create({
-        data: { ...base, itemType: 'decision_chain', itemData: { chain: analysis.decisionChain } },
+    const existingDecisionMap = (project.decisionMap as Record<string, unknown>) || {}
+    const existingDecisionNodes = Array.isArray(existingDecisionMap.nodes) ? (existingDecisionMap.nodes as unknown[]) : []
+
+    if (analysis.decisionChain?.length && existingDecisionNodes.length === 0) {
+      await createAutoAppliedItem(prisma, {
+        ...base,
+        itemType: 'decision_chain',
+        itemData: { chain: analysis.decisionChain },
       })
       pendingItemsCreated++
     }

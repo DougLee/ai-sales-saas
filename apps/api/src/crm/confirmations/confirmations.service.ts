@@ -13,6 +13,10 @@ import { refreshClosure } from '../visits/closure.service.js'
  * - reject：丢弃，只留审计痕迹
  *
  * 确认后的落库动作按 itemType 分发（applyConfirmedItem）：
+ * - first_contact    → project.humanInfo.firstContact（仅在为空时写入）
+ * - solution_summary → project.businessInfo.solution（仅在为空时写入）
+ * - price_quote      → project.financeInfo.price（仅在为空时写入）
+ * - bid_result       → project.evidence.bidResult（仅在为空时写入）
  * - task              → 实体服务层 createTask + TASK_CREATED(confirmed) 事件
  * - budget_signal     → project.financeInfo.budget（仅在为空时写入）
  * - key_request       → project.humanInfo.painPoints 追加
@@ -24,8 +28,8 @@ import { refreshClosure } from '../visits/closure.service.js'
 
 export type ResolveAction = 'confirm' | 'modify' | 'reject' | 'revoke'
 
-/** V6.2 分级信任：低风险类型（诉求/竞品）自动生效、不进人工确认队列，错了可 revoke 撤回 */
-export const AUTO_APPLY_TYPES = ['key_request', 'competitor_mention'] as const
+/** V6.2 分级信任：低风险类型（首次接触方式/方案要点/报价/中标结果/诉求/竞品/决策链）自动生效、不进人工确认队列，错了可 revoke 撤回 */
+export const AUTO_APPLY_TYPES = ['first_contact', 'solution_summary', 'price_quote', 'bid_result', 'key_request', 'competitor_mention', 'decision_chain'] as const
 
 interface PendingItemLike {
   id: string
@@ -50,6 +54,54 @@ export async function applyConfirmedItem(
     : null
 
   switch (item.itemType) {
+    case 'first_contact': {
+      if (!project) return {}
+      const humanInfo = (project.humanInfo as Record<string, unknown>) || {}
+      if (!humanInfo.firstContact) {
+        await prisma.project.update({
+          where: { id: project.id },
+          data: { humanInfo: { ...humanInfo, firstContact: String(finalData.content || '') } as never },
+        })
+      }
+      return {}
+    }
+
+    case 'solution_summary': {
+      if (!project) return {}
+      const businessInfo = (project.businessInfo as Record<string, unknown>) || {}
+      if (!businessInfo.solution) {
+        await prisma.project.update({
+          where: { id: project.id },
+          data: { businessInfo: { ...businessInfo, solution: String(finalData.content || '') } as never },
+        })
+      }
+      return {}
+    }
+
+    case 'price_quote': {
+      if (!project) return {}
+      const financeInfo = (project.financeInfo as Record<string, unknown>) || {}
+      if (!financeInfo.price) {
+        await prisma.project.update({
+          where: { id: project.id },
+          data: { financeInfo: { ...financeInfo, price: String(finalData.content || '') } as never },
+        })
+      }
+      return {}
+    }
+
+    case 'bid_result': {
+      if (!project) return {}
+      const evidence = (project.evidence as Record<string, unknown>) || {}
+      if (!evidence.bidResult) {
+        await prisma.project.update({
+          where: { id: project.id },
+          data: { evidence: { ...evidence, bidResult: String(finalData.content || '') } as never },
+        })
+      }
+      return {}
+    }
+
     case 'task': {
       const task = await createTask(prisma, {
         tenantId: item.tenantId,
@@ -120,7 +172,10 @@ export async function applyConfirmedItem(
     }
 
     case 'decision_chain': {
-      if (!project || project.decisionMap) return {}
+      if (!project) return {}
+      const existingMap = (project.decisionMap as Record<string, unknown>) || {}
+      const existingNodes = Array.isArray(existingMap.nodes) ? (existingMap.nodes as unknown[]) : []
+      if (existingNodes.length > 0) return {}
       const chain = Array.isArray(finalData.chain) ? finalData.chain : []
       const decisionMap = {
         nodes: chain.map((c, idx) => {
@@ -232,8 +287,64 @@ async function revokeAutoItem(prisma: PrismaClient, item: PendingItemLike, userI
     ? await prisma.project.findFirst({ where: { id: item.projectId, tenantId: item.tenantId } })
     : null
 
-  if (project && content) {
-    if (item.itemType === 'key_request') {
+  if (!project) {
+    return prisma.aiPendingItem.update({
+      where: { id: item.id },
+      data: { status: 'revoked', resolvedBy: userId, resolvedAt: new Date() },
+    })
+  }
+
+  if (item.itemType === 'decision_chain') {
+    const decisionMap = (project.decisionMap as Record<string, unknown>) || {}
+    const chain = Array.isArray((item.itemData as Record<string, unknown>)?.chain)
+      ? ((item.itemData as Record<string, unknown>).chain as Array<Record<string, unknown>>)
+      : []
+    const currentNodes = Array.isArray(decisionMap.nodes) ? (decisionMap.nodes as Array<Record<string, unknown>>) : []
+    const matches = chain.length > 0
+      && currentNodes.length === chain.length
+      && currentNodes.every((node, idx) => {
+        const expected = chain[idx]
+        return node?.name === expected?.name && node?.role === expected?.role
+      })
+    if (matches) {
+      await prisma.project.update({
+        where: { id: project.id },
+        data: { decisionMap: { ...decisionMap, nodes: [] } as never },
+      })
+    }
+  } else if (item.itemType === 'first_contact') {
+      const humanInfo = (project.humanInfo as Record<string, unknown>) || {}
+      if (humanInfo.firstContact === content) {
+        await prisma.project.update({
+          where: { id: project.id },
+          data: { humanInfo: { ...humanInfo, firstContact: null } as never },
+        })
+      }
+    } else if (item.itemType === 'solution_summary') {
+      const businessInfo = (project.businessInfo as Record<string, unknown>) || {}
+      if (businessInfo.solution === content) {
+        await prisma.project.update({
+          where: { id: project.id },
+          data: { businessInfo: { ...businessInfo, solution: null } as never },
+        })
+      }
+    } else if (item.itemType === 'price_quote') {
+      const financeInfo = (project.financeInfo as Record<string, unknown>) || {}
+      if (financeInfo.price === content) {
+        await prisma.project.update({
+          where: { id: project.id },
+          data: { financeInfo: { ...financeInfo, price: null } as never },
+        })
+      }
+    } else if (item.itemType === 'bid_result') {
+      const evidence = (project.evidence as Record<string, unknown>) || {}
+      if (evidence.bidResult === content) {
+        await prisma.project.update({
+          where: { id: project.id },
+          data: { evidence: { ...evidence, bidResult: null } as never },
+        })
+      }
+    } else if (item.itemType === 'key_request') {
       const humanInfo = (project.humanInfo as Record<string, unknown>) || {}
       const list = Array.isArray(humanInfo.painPoints) ? (humanInfo.painPoints as unknown[]) : []
       await prisma.project.update({
@@ -248,7 +359,6 @@ async function revokeAutoItem(prisma: PrismaClient, item: PendingItemLike, userI
         data: { businessInfo: { ...businessInfo, competitors: list.filter((c) => c !== content) } as never },
       })
     }
-  }
 
   return prisma.aiPendingItem.update({
     where: { id: item.id },
