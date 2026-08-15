@@ -58,7 +58,7 @@ function parseZhNumber(s: string): number | null {
   const digit = parseInt(s, 10)
   if (!Number.isNaN(digit)) return digit
   const map: Record<string, number> = {
-    一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10,
+    一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10,
   }
   if (s === '十') return 10
   if (s.startsWith('十') && s.length === 2) return 10 + (map[s[1]] ?? 0)
@@ -76,8 +76,21 @@ export interface EnrollTarget {
 }
 
 /**
+ * 垃圾名称守卫：序数/指示代词/动作碎片绝不能当客户名建库。
+ * 案例（2026-08-15）："把上边提到的前三个客户入库" 曾把「上边提到的前三个」建成客户。
+ */
+const JUNK_NAME_RE =
+  /(?:第|前|后)\s*[一二两三四五六七八九十\d]+\s*[个条名家位所校位]?$|^上边|^上面|^前面|^刚才|^之前|^上述|^前文|^这家|^那个|提到|自动|全部|这些|几个|[个条家些]$/
+
+function isJunkName(name: string): boolean {
+  const n = name.trim()
+  if (n.length < 2 || n.length > 30) return true
+  return JUNK_NAME_RE.test(n)
+}
+
+/**
  * 解析用户入库指令 → 要入库的目标列表。
- * 支持：序号(第N个/条)、全部(都/这些)、名称匹配(引号/书名号/"把XXX入库")。
+ * 支持：序号（第N个/前N个/后N个/条/家…）、全部(都/这些)、名称匹配(引号/书名号/"把XXX入库")。
  */
 export function resolveEnrollTargets(
   userMessage: string,
@@ -85,16 +98,34 @@ export function resolveEnrollTargets(
 ): { targets: EnrollTarget[]; reason?: string } {
   const msg = userMessage.trim()
 
-  // 1. 序号：第N个 / 第N条 / 第N家 / 第N所 / 第N校 / 第N院 / 第N位 / 第N名
-  const ordMatch = msg.match(/第\s*([一二三四五六七八九十\d]+)\s*[个条名家位所校院]/)
+  // 1. 序号：第N个（第 3 个）/ 前N个（前三个 = 头 3 个）/ 后N个（后两个 = 末 2 个）
+  const ordMatch = msg.match(/(第|前|后)\s*([一二两三四五六七八九十\d]+)\s*[个条名家位所校院]/)
   if (ordMatch) {
-    const n = parseZhNumber(ordMatch[1])
-    if (n && n >= 1 && n <= candidates.length) {
+    const kind = ordMatch[1]
+    const n = parseZhNumber(ordMatch[2])
+    if (!n || n < 1) {
+      return { targets: [], reason: 'unclear' }
+    }
+    if (kind === '前') {
+      if (candidates.length === 0) return { targets: [], reason: 'no-candidates' }
+      if (n > candidates.length) {
+        return { targets: [], reason: `上一轮只推荐了 ${candidates.length} 个，没有前 ${n} 个` }
+      }
+      return { targets: candidates.slice(0, n).map((c) => ({ ...c, origin: 'recommend' as const })) }
+    }
+    if (kind === '后') {
+      if (candidates.length === 0) return { targets: [], reason: 'no-candidates' }
+      if (n > candidates.length) {
+        return { targets: [], reason: `上一轮只推荐了 ${candidates.length} 个，没有后 ${n} 个` }
+      }
+      return { targets: candidates.slice(-n).map((c) => ({ ...c, origin: 'recommend' as const })) }
+    }
+    if (n <= candidates.length) {
       return { targets: [{ ...candidates[n - 1], origin: 'recommend' }] }
     }
     return {
       targets: [],
-      reason: `未找到第 ${n ?? ordMatch[1]} 个（上一轮共推荐 ${candidates.length} 个）`,
+      reason: `未找到第 ${n} 个（上一轮共推荐 ${candidates.length} 个）`,
     }
   }
 
@@ -104,21 +135,20 @@ export function resolveEnrollTargets(
     return { targets: candidates.map((c) => ({ ...c, origin: 'recommend' as const })) }
   }
 
-  // 3. 名称：引号/书名号里的，或"把XXX入库"里的 XXX
-  //    注意：形如"第二家"这种明显是序号的短语，不应被当客户名直接建库
+  // 3. 名称：引号/书名号里的，或"把XXX入库"里的 XXX（过垃圾名称守卫）
   const nameHits: string[] = []
-  const ordinalLike = /^第\s*[一二三四五六七八九十\d]+\s*[个条名家位所校院]?$/
   const quoted = msg.match(/[「"'《【]([^」"'》】]{2,30})[」"'》】]/g)
   if (quoted) {
     for (const q of quoted) {
       const inner = q.replace(/[「"'《【」"'》】]/g, '').trim()
-      if (inner && !nameHits.includes(inner) && !ordinalLike.test(inner)) nameHits.push(inner)
+      if (inner && !nameHits.includes(inner) && !isJunkName(inner)) nameHits.push(inner)
     }
   }
-  const ba = msg.match(/把\s*([一-龥A-Za-z0-9·]{2,30}?)(?:公司|学校|学院|大学|客户|机构)?\s*(?:入库|入公海|建档|加进)/)
+  // 名称含机构后缀（公司/大学/学院…）时整体捕获，避免"把开封大学入库"只截到"开封"
+  const ba = msg.match(/把\s*([一-龥A-Za-z0-9·]{2,30}?(?:公司|学校|学院|大学|医院|机构)?)\s*(?:入库|入公海|建档|加进)/)
   if (ba?.[1]) {
     const n = ba[1].trim()
-    if (!nameHits.includes(n) && !ordinalLike.test(n)) nameHits.push(n)
+    if (!nameHits.includes(n) && !isJunkName(n)) nameHits.push(n)
   }
 
   if (nameHits.length > 0) {
