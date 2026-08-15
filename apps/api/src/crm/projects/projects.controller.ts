@@ -7,6 +7,7 @@ import { ActivityEventType } from '../../lib/activity.js'
 import { validateMilestoneAdvance, loadMilestoneGates, MILESTONE_LABELS } from '../../milestone-gate/index.js'
 import { aiReadinessCheck, type AiReadiness } from '../../milestone-gate/readiness-check.js'
 import { cancelTasksForEntity } from '../tasks/task-cleanup.util.js'
+import { computeProjectDerivation, evidenceCountsByProject } from './projects.derivation.service.js'
 
 function getPrisma(req: FastifyRequest): PrismaClient {
   return req.tenantPrisma!
@@ -61,7 +62,14 @@ export async function list(req: FastifyRequest<{ Querystring: Record<string, str
       prisma.project.count({ where: whereWithSoftDelete }),
     ])
 
-    reply.send({ success: true, data: { items, total, page: query.page, pageSize: query.pageSize } })
+    // ADR-0003 决策 2：附带推导字段（停滞/等待/决策链/证据链/下一步/幻觉/可信度）
+    const evidenceMap = await evidenceCountsByProject(prisma, user.tenantId, items.map((p) => p.id))
+    const itemsWithDerivation = items.map((p) => ({
+      ...p,
+      derivation: computeProjectDerivation(p, evidenceMap.get(p.id) || 0),
+    }))
+
+    reply.send({ success: true, data: { items: itemsWithDerivation, total, page: query.page, pageSize: query.pageSize } })
   } catch (err) {
     reply.status(400).send({ success: false, error: (err as Error).message })
   }
@@ -96,7 +104,11 @@ export async function get(req: FastifyRequest<{ Params: { id: string } }>, reply
       amount: project.amount,
       nextFollowUp: project.nextFollowUp,
     })
-    reply.send({ success: true, data: { ...project, healthScore: health.score, healthRadar: health.radar } })
+    // ADR-0003 决策 2：详情页真假条/锚点条复用推导字段
+    const evidenceMap = await evidenceCountsByProject(prisma, user.tenantId, [project.id])
+    const derivation = computeProjectDerivation(project, evidenceMap.get(project.id) || 0)
+
+    reply.send({ success: true, data: { ...project, healthScore: health.score, healthRadar: health.radar, derivation } })
   } catch (err) {
     reply.status(400).send({ success: false, error: (err as Error).message })
   }
