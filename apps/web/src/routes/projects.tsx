@@ -47,98 +47,63 @@ const taskPriorityMap: Record<string, string> = {
   URGENT: 'text-danger font-bold',
 }
 
-// 各里程碑阶段标准动作清单（基于销售方法论）
-const milestoneChecklists: Record<number, { title: string; items: string[]; nextHint: string }> = {
-  0: {
-    title: 'M0 初识客户 — 本阶段标准动作',
-    items: [
-      '已建立初次联系（电话/拜访/引荐）',
-      '已了解客户基本情况（学校规模、院系设置、信息化现状）',
-      '已确认客户对AI教育的初步认知',
-      '已约定下次沟通时间和主题',
-    ],
-    nextHint: '推进到 M1 明确痛点的条件：识别出至少1个具体痛点，且客户愿意深入交流',
-  },
-  1: {
-    title: 'M1 明确痛点 — 本阶段标准动作',
-    items: [
-      '已识别 ≥1 个明确痛点（师资不足/平台卡顿/课程质量等）',
-      '痛点已与客户关键人当面确认',
-      '已记录痛点证据（客户原话/政策文件/现有问题截图）',
-      '已评估各痛点的紧迫度和影响范围',
-    ],
-    nextHint: '推进到 M2 明确需求的条件：痛点已量化成具体需求指标（覆盖学生数、开课时间、功能要求）',
-  },
-  2: {
-    title: 'M2 明确需求 — 本阶段标准动作',
-    items: [
-      '需求已量化（覆盖学生规模、开课学期、学分要求）',
-      '需求优先级已与客户共识排序',
-      '已确认需求范围边界（哪些做/哪些不做）',
-      '已获取客户对需求的签字/邮件确认',
-    ],
-    nextHint: '推进到 M3 明确经费的条件：客户已透露预算来源和大致金额区间',
-  },
-  3: {
-    title: 'M3 明确经费 — 本阶段标准动作',
-    items: [
-      '已确认预算来源（常规预算/专项经费/科研经费/自筹）',
-      '已了解预算金额范围（上限/下限/心理价位）',
-      '已明确审批流程（需要哪些人签字、几级审批）',
-      '已识别关键审批人及其权力范围',
-    ],
-    nextHint: '推进到 M4 明确方案的条件：客户认可我方方案方向，同意进入技术交流/演示阶段',
-  },
-  4: {
-    title: 'M4 明确方案 — 本阶段标准动作',
-    items: [
-      '已呈现针对该客户的定制化方案',
-      '已完成技术交流/产品演示/案例参观',
-      '已确认实施计划（时间线、交付内容、验收标准）',
-      '已获取客户对方案的核心反馈（认可/修改意见）',
-    ],
-    nextHint: '推进到 M5 明确价格的条件：方案已通过技术评估，客户进入商务谈判阶段',
-  },
-  5: {
-    title: 'M5 明确价格 — 本阶段标准动作',
-    items: [
-      '已提交正式报价单（含明细和价格构成）',
-      '已处理主要价格异议（与竞品对比/ROI论证）',
-      '已确认合同核心条款（付款方式、交付周期、售后）',
-      '已与客户达成价格共识（书面或邮件确认）',
-    ],
-    nextHint: '推进到 M6 协助采购的条件：价格已共识，客户开始内部采购流程',
-  },
-  6: {
-    title: 'M6 协助采购 — 本阶段标准动作',
-    items: [
-      '已协助客户完成采购申请文件',
-      '已准备投标所需资质和材料',
-      '已确认采购关键时间节点（挂网/开标/评标）',
-      '已持续跟进采购进度，排除流程障碍',
-    ],
-    nextHint: '推进到 M7 招标确认的条件：招标参数已确定，我方技术评分占优',
-  },
-  7: {
-    title: 'M7 招标确认 — 本阶段标准动作',
-    items: [
-      '已确认招标参数有利于我方（或至少公平）',
-      '已中标或评标结果明显倾向我方',
-      '已准备合同签署所需全部文件',
-      '已明确项目启动时间和首期交付内容',
-    ],
-    nextHint: '推进到 M8 投标中标的条件：合同已签署，项目正式启动',
-  },
-  8: {
-    title: 'M8 投标中标 — 客户成功阶段',
-    items: [
-      '合同已正式签署并归档',
-      '项目已启动（召开启动会、成立项目组）',
-      '交付计划已与客户确认',
-      '已制定客户成功/增购计划',
-    ],
-    nextHint: '本阶段为终点，重点转向交付实施和客户成功，挖掘增购和转介绍机会',
-  },
+// 各里程碑方法论要点（issue #32 配套简化 3：能否推进只看 gate，本清单仅保留方法论提示作用；
+// 原 nextHint 推进条件文案已并入推进卡水位计数与推进按钮 title，不再两套口径并存）
+const milestoneChecklists: Record<number, string[]> = {
+  0: [
+    '已建立初次联系（电话/拜访/引荐）',
+    '已了解客户基本情况（学校规模、院系设置、信息化现状）',
+    '已确认客户对AI教育的初步认知',
+    '已约定下次沟通时间和主题',
+  ],
+  1: [
+    '已识别 ≥1 个明确痛点（师资不足/平台卡顿/课程质量等）',
+    '痛点已与客户关键人当面确认',
+    '已记录痛点证据（客户原话/政策文件/现有问题截图）',
+    '已评估各痛点的紧迫度和影响范围',
+  ],
+  2: [
+    '需求已量化（覆盖学生规模、开课学期、学分要求）',
+    '需求优先级已与客户共识排序',
+    '已确认需求范围边界（哪些做/哪些不做）',
+    '已获取客户对需求的签字/邮件确认',
+  ],
+  3: [
+    '已确认预算来源（常规预算/专项经费/科研经费/自筹）',
+    '已了解预算金额范围（上限/下限/心理价位）',
+    '已明确审批流程（需要哪些人签字、几级审批）',
+    '已识别关键审批人及其权力范围',
+  ],
+  4: [
+    '已呈现针对该客户的定制化方案',
+    '已完成技术交流/产品演示/案例参观',
+    '已确认实施计划（时间线、交付内容、验收标准）',
+    '已获取客户对方案的核心反馈（认可/修改意见）',
+  ],
+  5: [
+    '已提交正式报价单（含明细和价格构成）',
+    '已处理主要价格异议（与竞品对比/ROI论证）',
+    '已确认合同核心条款（付款方式、交付周期、售后）',
+    '已与客户达成价格共识（书面或邮件确认）',
+  ],
+  6: [
+    '已协助客户完成采购申请文件',
+    '已准备投标所需资质和材料',
+    '已确认采购关键时间节点（挂网/开标/评标）',
+    '已持续跟进采购进度，排除流程障碍',
+  ],
+  7: [
+    '已确认招标参数有利于我方（或至少公平）',
+    '已中标或评标结果明显倾向我方',
+    '已准备合同签署所需全部文件',
+    '已明确项目启动时间和首期交付内容',
+  ],
+  8: [
+    '合同已正式签署并归档',
+    '项目已启动（召开启动会、成立项目组）',
+    '交付计划已与客户确认',
+    '已制定客户成功/增购计划',
+  ],
 }
 
 // 里程碑推进门控配置——单一真源 @ai-sales/shared（ADR-0004 决策 9：消除前后端手抄漂移）
@@ -240,9 +205,27 @@ function checkGateCompletion(project: Project): { completed: boolean; missing: s
   for (const field of gate.requiredFields) {
     const val = getNestedValue(project as unknown as Record<string, unknown>, field.path)
     const valid = field.validate ? field.validate(val) : !isEmptyValue(val)
-    if (!valid) missing.push(field.label)
+    // 口径统一（issue #32）：缺失提示用销售语言（FIELD_COLLOQ），不暴露后端字段名
+    if (!valid) missing.push(FIELD_COLLOQ[field.path]?.label ?? field.label)
   }
   return { completed: missing.length === 0, missing }
+}
+
+/** 沿 path 写入 value 的浅拷贝（一步提交：保存字段后用乐观快照复用推进 confirm 流程） */
+function withNestedValue<T>(obj: T, path: string, value: unknown): T {
+  const keys = path.split('.')
+  const clone: Record<string, unknown> = { ...(obj as Record<string, unknown>) }
+  let cur = clone
+  for (let i = 0; i < keys.length - 1; i++) {
+    const k = keys[i]
+    const next = cur[k]
+    cur[k] = next && typeof next === 'object' && !Array.isArray(next)
+      ? { ...(next as Record<string, unknown>) }
+      : {}
+    cur = cur[k] as Record<string, unknown>
+  }
+  cur[keys[keys.length - 1]] = value
+  return clone as T
 }
 
 export default function Projects() {
@@ -260,8 +243,9 @@ export default function Projects() {
   const setTab = (v: string) => setParam('tab', v === '全部' ? '' : v)
   const viewMode = (searchParams.get('view') as 'list' | 'board' | 'funnel') || 'board'
   const setViewMode = (v: 'list' | 'board' | 'funnel') => setParam('view', v === 'board' ? '' : v)
-  const collapsed = searchParams.get('collapsed') === '1'
-  const setCollapsed = (v: boolean) => setParam('collapsed', v ? '1' : '')
+  // 看板默认三段三列（issue #32 配套简化 1）：折叠为默认态，展开 9 列才落 URL（collapsed=0）
+  const collapsed = searchParams.get('collapsed') !== '0'
+  const setCollapsed = (v: boolean) => setParam('collapsed', v ? '' : '0')
   const healthFilter = searchParams.get('health') || ''
   const setHealthFilter = (v: string) => setParam('health', v)
   const onlyStale = searchParams.get('stale') === '1'
@@ -949,6 +933,7 @@ export default function Projects() {
                               project={detailItem}
                               fields={gate.requiredFields}
                               gateField={gateField}
+                              onAdvance={handleAdvanceMilestone}
                             />
                           </div>
                         )}
@@ -976,7 +961,7 @@ export default function Projects() {
                               onClick={() => handleAdvanceMilestone(detailItem)}
                               disabled={update.isPending || !gateStatus.completed || m >= 8}
                               className="flex items-center gap-1 rounded-lg bg-primary px-5 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:bg-border disabled:text-text-tertiary"
-                              title={gateStatus.completed ? (belowReq.length > 0 ? '含未验证字段，将弱锚定推进' : '全部字段验证达标，强锚定推进') : `需先录入：${gateStatus.missing.join('、')}`}
+                              title={gateStatus.completed ? (belowReq.length > 0 ? '含未验证字段，将弱锚定推进' : '全部字段验证达标，强锚定推进') : `补齐后可推进（提交材料由 AI 提取，或点填写）：${gateStatus.missing.join('、')}`}
                             >
                               {update.isPending ? <Loader2 size={12} className="animate-spin" /> : <ChevronRight size={12} />}
                               推进到 M{m + 1}
@@ -1020,36 +1005,26 @@ export default function Projects() {
                   })()}
                 </div>
 
-                {/* Milestone Stage Checklist */}
+                {/* 本阶段方法论要点（issue #32 配套简化 3）：轻量折叠卡，默认收起；
+                    「能否推进」只看推进卡 gate（单一标准），此处仅保留方法论提示 */}
                 {(() => {
-                  const checklist = milestoneChecklists[detailItem.milestone]
-                  if (!checklist) return null
-                  const gateStatus = checkGateCompletion(detailItem)
+                  const points = milestoneChecklists[detailItem.milestone]
+                  if (!points) return null
                   return (
-                    <div className="rounded-xl border border-border bg-background p-4">
-                      <div className="mb-3 flex items-center justify-between">
-                        <h4 className="text-sm font-medium text-text-secondary">{checklist.title}</h4>
-                        <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${gateStatus.completed ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning'}`}>
-                          {gateStatus.completed ? '已满足推进条件' : '未满足推进条件'}
-                        </span>
-                      </div>
-                      <div className="space-y-2">
-                        {checklist.items.map((item, idx) => (
+                    <details className="rounded-xl border border-border bg-background p-4">
+                      <summary className="cursor-pointer select-none text-sm font-medium text-text-secondary">
+                        本阶段方法论要点 · M{detailItem.milestone} {milestoneLabels[detailItem.milestone]}
+                      </summary>
+                      <div className="mt-3 space-y-2">
+                        {points.map((item, idx) => (
                           <div key={idx} className="flex items-start gap-2">
-                            <div className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border border-border">
-                              <div className="h-2.5 w-2.5 rounded-sm bg-surface-elevated" />
-                            </div>
+                            <div className="mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full bg-border" />
                             <span className="text-xs text-text-secondary leading-relaxed">{item}</span>
                           </div>
                         ))}
                       </div>
-
-                      {/* 阶段档案与材料入口已并入上方推进卡 v2（ADR-0005） */}
-
-                      <div className="mt-3 rounded-lg bg-primary/5 p-3">
-                        <p className="text-xs font-medium text-primary">{checklist.nextHint}</p>
-                      </div>
-                    </div>
+                      <p className="mt-2.5 text-[10.5px] text-text-tertiary">方法论参考，不参与校验；能否推进以上方推进卡门禁字段为准</p>
+                    </details>
                   )
                 })()}
 
@@ -1088,12 +1063,23 @@ export default function Projects() {
                     </div>
                   )}
                   {(() => {
-                    const checklist = milestoneChecklists[detailItem.milestone]
-                    return checklist?.nextHint ? (
+                    // 口径统一（issue #32）：建议文案改由 gate 缺失字段推导，不再引用 checklist nextHint 旧口径
+                    if (detailItem.milestone >= 8) {
+                      return (
+                        <div className="mt-2.5 rounded-lg bg-surface p-2.5 text-xs text-text-secondary">
+                          <b className="text-primary">AI 建议：</b>已到终点，重点转向交付实施与客户成功，挖掘增购和转介绍机会
+                        </div>
+                      )
+                    }
+                    const gs = checkGateCompletion(detailItem)
+                    return (
                       <div className="mt-2.5 rounded-lg bg-surface p-2.5 text-xs text-text-secondary">
-                        <b className="text-primary">AI 建议：</b>{checklist.nextHint}
+                        <b className="text-primary">AI 建议：</b>
+                        {gs.completed
+                          ? `本阶段材料已齐备，可推进到 M${detailItem.milestone + 1} ${milestoneLabels[detailItem.milestone + 1]}`
+                          : `先补齐「${gs.missing.join('、')}」，提交材料由 AI 提取或点填写；补齐后即可推进到 M${detailItem.milestone + 1}`}
                       </div>
-                    ) : null
+                    )
                   })()}
                 </div>
 
@@ -1483,16 +1469,24 @@ function GateFieldPanel({
   project,
   fields,
   gateField,
+  onAdvance,
 }: {
   project: Project
   fields: Array<{ path: string; label: string; validate?: (val: unknown) => boolean }>
   gateField: ReturnType<typeof useUpdateGateField>
+  /** 一步提交（issue #32 验收：字段+推进不再两步）：保存最后缺失字段后复用页面级推进 confirm 流程 */
+  onAdvance?: (project: Project) => void | Promise<void>
 }) {
   const [editingPath, setEditingPath] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
 
   const metas = readFieldMetas(project.evidence)
   const record = project as unknown as Record<string, unknown>
+  // 与 checkGateCompletion 同口径：当前还缺几个字段（值维度）
+  const missingCount = fields.filter((f) => {
+    const v = getNestedValue(record, f.path)
+    return f.validate ? !f.validate(v) : isEmptyValue(v)
+  }).length
 
   return (
     <div className="space-y-1">
@@ -1563,7 +1557,10 @@ function GateFieldPanel({
               {valid || level === 'final' ? display : '未录入——提交材料由 AI 提取，或点「填写」手填（自述）'}
             </p>
 
-            {editingPath === field.path && (
+            {editingPath === field.path && (() => {
+              // 一步提交：本字段是最后一个缺失字段（保存后 gate 即满足）→ 主按钮「保存并推进」
+              const isLastMissing = !valid && missingCount === 1 && project.milestone < 8 && !!onAdvance
+              return (
               <div className="mt-2 space-y-1.5">
                 <textarea
                   value={draft}
@@ -1578,16 +1575,26 @@ function GateFieldPanel({
                   <button
                     onClick={() => gateField.mutate(
                       { path: field.path, value: draft.trim() },
-                      { onSuccess: () => setEditingPath(null) },
+                      {
+                        onSuccess: () => {
+                          setEditingPath(null)
+                          // 保存成功且 gate 即将满足 → 用乐观快照触发页面级推进 confirm（弱锚定警示保留）
+                          if (isLastMissing && onAdvance) {
+                            onAdvance(withNestedValue(project, field.path, draft.trim()))
+                          }
+                        },
+                      },
                     )}
                     disabled={!draft.trim() || gateField.isPending}
-                    className="flex-1 rounded-md bg-primary px-2 py-1 text-[11px] font-medium text-white disabled:opacity-50"
+                    title={isLastMissing ? '保存后本阶段条件齐备，将自动发起推进确认' : undefined}
+                    className="flex-1 rounded-md bg-primary px-2 py-1 text-[11px] font-medium text-white transition-colors hover:bg-primary-hover disabled:opacity-50"
                   >
-                    保存（自述）
+                    {gateField.isPending ? '保存中…' : isLastMissing ? '保存并推进' : '保存（自述）'}
                   </button>
                 </div>
               </div>
-            )}
+              )
+            })()}
 
             {/* 来源链（ADR-0005）：chips 可撤销 + 决策人坐实 */}
             {meta && meta.sources.length > 0 && (
