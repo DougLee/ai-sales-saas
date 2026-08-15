@@ -138,6 +138,23 @@ ${content}
     }
   }
 
+  // 兜底（#26，高频卡点字段）：预算 / 我方报价 / 首次接触方式——AI 漏提时正则补提，
+  // 模式照 bidResult 先例：仅在字段为空时补，不覆盖 AI 已有产物
+  const keyInfo = { ...(analysis.keyInfo || {}) }
+  if (!keyInfo.budget?.trim()) {
+    const m = content.match(/(?:客户)?预算(?:大约|大概|约|为)?\s*([0-9０-９.]+|[一二三四五六七八九十百]+)\s*万(?:元)?[^\n。；]{0,40}/)
+    if (m) keyInfo.budget = m[0].trim().slice(0, 120)
+  }
+  if (!keyInfo.price?.trim()) {
+    const m = content.match(/(?:总报价|报价总额|我方报价|正式报价)(?:为|约)?\s*([0-9０-９.]+|[一二三四五六七八九十百]+)\s*万(?:元)?[^\n。；]{0,40}/)
+    if (m) keyInfo.price = m[0].trim().slice(0, 120)
+  }
+  if (!keyInfo.firstContact?.trim()) {
+    const m = content.match(/(?:首次|第一次|最初)?(?:通过|经)?\s*(电话|上门拜访|拜访|引荐|转介绍|展会|朋友介绍|老客户介绍)[^\n。；]{0,20}(?:联系|接触|认识|对接)/)
+    if (m) keyInfo.firstContact = m[0].trim().slice(0, 60)
+  }
+  analysis = { ...analysis, keyInfo }
+
   // V6.1 节点4：AI 扩写摘要（summary 为空或过短时生成）——AI 产物，不参与评分
   let finalSummary = visit.summary
   if (!finalSummary || finalSummary.length < 50) {

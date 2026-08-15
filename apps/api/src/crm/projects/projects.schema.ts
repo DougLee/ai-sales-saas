@@ -21,7 +21,10 @@ export const CreateProjectSchema = z.object({
   lostInfo: z.record(z.unknown()).optional(),
 })
 
-export const UpdateProjectSchema = CreateProjectSchema.partial()
+export const UpdateProjectSchema = CreateProjectSchema.partial().extend({
+  /** ADR-0004 决策 4：里程碑回退原因（回退时必填） */
+  backReason: z.string().min(1).optional(),
+})
 
 export const ListProjectsQuerySchema = z.object({
   milestone: z.string().transform(Number).optional(),

@@ -17,7 +17,7 @@ import { recordTimelineEvent } from '../../lib/timeline.js'
 import { ActivityEventType } from '../../lib/activity.js'
 import { cancelTasksForEntity } from '../tasks/task-cleanup.util.js'
 import { calculateLeadScore, checkConversionReadiness } from './leads.scoring.js'
-import { computeLeadDerivations } from './leads.derivation.service.js'
+import { computeLeadDerivations, gradeConvertedMilestone } from './leads.derivation.service.js'
 
 // 纯函数已抽至 leads.scoring.ts（避免 controller ↔ derivation 循环依赖）；此处 re-export 保持既有 import 兼容
 export { calculateLeadScore, checkConversionReadiness } from './leads.scoring.js'
@@ -479,7 +479,8 @@ export async function convert(req: FastifyRequest<{ Params: { id: string } }>, r
       })
     }
 
-    // 2. 创建商机
+    // 2. 创建商机——转化即定级（ADR-0004 决策 7）：按已确认证据核定初始里程碑，封顶 M2
+    const grading = gradeConvertedMilestone(lead as never)
     const project = await tx.project.create({
       data: {
         tenantId,
@@ -488,7 +489,7 @@ export async function convert(req: FastifyRequest<{ Params: { id: string } }>, r
         sourceLeadId: lead.id,
         name: lead.name,
         industry: lead.industry,
-        milestone: 0,
+        milestone: grading.milestone,
         humanInfo: lead.humanInfo || {},
         businessInfo: lead.businessInfo || {},
         financeInfo: lead.financeInfo || {},
@@ -542,6 +543,9 @@ export async function convert(req: FastifyRequest<{ Params: { id: string } }>, r
       companyId: company.id,
       force: body.force || false,
       forceReason: body.forceReason,
+      // 转化即定级依据（ADR-0004 决策 7）
+      gradedMilestone: grading.milestone,
+      gradingEvidence: grading.evidence,
     }
 
     await recordTimelineEvent(tx as unknown as PrismaClient, {

@@ -211,15 +211,30 @@ export async function validateMilestoneAdvance(
   toStage: number,
   gates: MilestoneGate[] = DEFAULT_MILESTONE_GATES,
 ): Promise<GateValidationResult> {
-  // 回退或不变更时不校验
+  // 回退或不变更时不校验（回退的确认与留痕在 controller 层处理，ADR-0004 决策 4）
   if (toStage <= fromStage) {
     return { passed: true, fromStage, toStage, missing: [], checkedAt: new Date() }
   }
 
-  const gate = gates.find((g) => g.fromStage === fromStage)
-  // 找不到对应 gate 时不阻断，避免未知场景造成业务停滞
-  if (!gate) {
-    return { passed: true, fromStage, toStage, missing: [], checkedAt: new Date() }
+  // ADR-0004 决策 1：跨级推进校验途经的每一道 gate，而非只查起点
+  // （原实现 M0 直跳 M8 只查 firstContact，8 道门禁旁路 7 道）
+  const stagesToCheck: number[] = []
+  for (let s = fromStage; s < toStage; s++) stagesToCheck.push(s)
+
+  // ADR-0004 决策 2：fail-closed——途经阶段缺 gate 配置属于配置异常，必须显式报错而非放行
+  const missingConfig = stagesToCheck.filter(
+    (s) => !gates.some((g) => g.fromStage === s),
+  )
+  if (missingConfig.length > 0) {
+    return {
+      passed: false,
+      fromStage,
+      toStage,
+      missing: missingConfig.map((s) => ({
+        label: `里程碑配置缺失：M${s}（${MILESTONE_LABELS[s] ?? s}）无门禁规则，请联系管理员检查方法论配置`,
+      })),
+      checkedAt: new Date(),
+    }
   }
 
   const project = await prisma.project.findFirst({
@@ -238,18 +253,30 @@ export async function validateMilestoneAdvance(
   const evidenceRecords = await loadEvidenceRecords(prisma, projectId)
   const missing: Array<{ path?: string; label: string }> = []
 
-  for (const node of gate.requiredFields) {
-    const result = evaluateRuleNode(node, projectData, evidenceRecords)
-    if (!result.passed) {
-      missing.push(...result.missing)
+  // ADR-0004 决策 6：manual-pass 豁免的字段跳过校验（来源映射存于 evidence._gateFieldSource）
+  const evidenceJson = (projectData.evidence as Record<string, unknown> | null) || {}
+  const manualPassed = new Set(
+    Object.entries((evidenceJson._gateFieldSource as Record<string, string>) || {})
+      .filter(([, source]) => source === 'manual-pass')
+      .map(([path]) => path),
+  )
+
+  for (const stage of stagesToCheck) {
+    const gate = gates.find((g) => g.fromStage === stage)!
+    for (const node of gate.requiredFields) {
+      const result = evaluateRuleNode(node, projectData, evidenceRecords)
+      if (!result.passed) {
+        missing.push(...result.missing)
+      }
     }
   }
+  const effectiveMissing = missing.filter((m) => !m.path || !manualPassed.has(m.path))
 
   return {
-    passed: missing.length === 0,
+    passed: effectiveMissing.length === 0,
     fromStage,
     toStage,
-    missing,
+    missing: effectiveMissing,
     checkedAt: new Date(),
   }
 }

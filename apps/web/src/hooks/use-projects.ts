@@ -53,6 +53,7 @@ export interface Project {
   industry: string
   amount?: number
   milestone: number
+  status?: 'following' | 'stale' | 'won' | 'lost'
   urgency: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
   healthScore?: number
   nextFollowUp?: string
@@ -98,6 +99,8 @@ export interface Project {
   }>
   createdAt: string
   updatedAt: string
+  /** gate 字段来源映射（evidence._gateFieldSource，ADR-0004 阶段档案） */
+  evidence?: Record<string, unknown>
   /** 列表推导字段（后端 projects.derivation.service，ADR-0003） */
   derivation?: ProjectDerivation
   sourceLeadId?: string
@@ -189,6 +192,22 @@ export function useDeleteProject() {
       toast.success('商机已删除')
     },
     onError: (err) => toast.error((err as Error).message || '删除失败'),
+  })
+}
+
+/** 阶段档案：门禁字段人工录入 / manual-pass 豁免（ADR-0004 决策 5/6） */
+export function useUpdateGateField(projectId?: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: { path: string; value?: string; manualPass?: boolean; reason?: string }) =>
+      put(`/api/projects/${projectId}/gate-field`, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['project', projectId] })
+      qc.invalidateQueries({ queryKey: ['projects'] })
+      qc.invalidateQueries({ queryKey: ['project-metrics'] })
+      toast.success('阶段档案已更新')
+    },
+    onError: (err) => toast.error((err as Error).message || '更新失败'),
   })
 }
 

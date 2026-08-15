@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { list, get, create, update, remove, timeline, pipeline } from './projects.controller.js'
 import { projectMetrics } from './projects.derivation.service.js'
+import { updateGateField } from './gate-field.controller.js'
 import { getDecisionChain, updateDecisionChain } from './decision-chain.controller.js'
 import { markWaiting, clearWaiting } from './waiting.controller.js'
 import { listByProject } from '../activities/activities.controller.js'
@@ -18,5 +19,6 @@ export async function projectsRoutes(app: FastifyInstance) {
   app.get('/:id/decision-chain', getDecisionChain)
   app.put('/:id/decision-chain', updateDecisionChain)
   app.put('/:id/waiting', markWaiting)
+  app.put('/:id/gate-field', updateGateField)
   app.delete('/:id/waiting', clearWaiting)
 }

@@ -178,7 +178,7 @@ describe('validateMilestoneAdvance', () => {
     expect(result.missing).toHaveLength(0)
   })
 
-  it('passes when no gate defined for current stage', async () => {
+  it('fails closed when no gate defined for a traversed stage (ADR-0004)', async () => {
     const prisma = createMockPrisma({
       humanInfo: {},
       businessInfo: {},
@@ -189,8 +189,45 @@ describe('validateMilestoneAdvance', () => {
 
     const result = await validateMilestoneAdvance(prisma, 'proj_1', 99, 100)
 
+    // 原 fail-open 行为已废除：配置缺失必须显式报错
+    expect(result.passed).toBe(false)
+    expect(result.missing[0]?.label).toContain('无门禁规则')
+  })
+
+  it('cross-stage jump checks every traversed gate (ADR-0004 决策 1)', async () => {
+    // 只有 firstContact 满足——M0 直跳 M8 应被拦，missing 覆盖 M1-M7 全部字段
+    const prisma = createMockPrisma({
+      humanInfo: { firstContact: '电话' },
+      businessInfo: {},
+      financeInfo: {},
+      decisionMap: {},
+      evidence: [],
+    })
+
+    const result = await validateMilestoneAdvance(prisma, 'proj_1', 0, 8)
+
+    expect(result.passed).toBe(false)
+    const labels = result.missing.map((m) => m.label).join('、')
+    expect(labels).toContain('痛点列表')
+    expect(labels).toContain('需求指标')
+    expect(labels).toContain('预算金额')
+    expect(labels).toContain('方案要点')
+    expect(labels).toContain('报价金额')
+    expect(labels).toContain('决策链人物')
+    expect(labels).toContain('中标结果')
+  })
+
+  it('single-step advance still only checks its own gate', async () => {
+    const prisma = createMockPrisma({
+      humanInfo: { firstContact: '电话' },
+      businessInfo: {},
+      financeInfo: {},
+      decisionMap: {},
+      evidence: [],
+    })
+
+    const result = await validateMilestoneAdvance(prisma, 'proj_1', 0, 1)
     expect(result.passed).toBe(true)
-    expect(result.missing).toHaveLength(0)
   })
 
   it('returns all missing fields for multi-field gates', async () => {

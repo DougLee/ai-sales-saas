@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { calculateLeadScore, checkConversionReadiness } from '../../../src/crm/leads/leads.controller.js'
-import { computeLeadDerivations } from '../../../src/crm/leads/leads.derivation.service.js'
+import { computeLeadDerivations, gradeConvertedMilestone } from '../../../src/crm/leads/leads.derivation.service.js'
 import {
   CreateLeadSchema,
   FollowUpSchema,
@@ -273,5 +273,28 @@ describe('leads schemas', () => {
   it('validates lose input', () => {
     const parsed = LoseSchema.parse({ lostReason: '选择竞品' })
     expect(parsed.lostReason).toBe('选择竞品')
+  })
+})
+
+describe('gradeConvertedMilestone (ADR-0004 转化即定级)', () => {
+  it('痛点+需求齐备 → M2（封顶）', () => {
+    const r = gradeConvertedMilestone({
+      humanInfo: { painPoints: ['师资不足', '平台卡顿'] },
+      businessInfo: { requirements: '覆盖 5000 学生，下学期开课' },
+    })
+    expect(r.milestone).toBe(2)
+    expect(r.evidence).toContain('需求已量化')
+  })
+
+  it('仅痛点 → M1', () => {
+    expect(gradeConvertedMilestone({ humanInfo: { painPoints: ['预算未知'] }, businessInfo: {} }).milestone).toBe(1)
+  })
+
+  it('空线索 → M0', () => {
+    expect(gradeConvertedMilestone({ humanInfo: {}, businessInfo: {} }).milestone).toBe(0)
+  })
+
+  it('只有需求没有痛点 → M0（M1 是 M2 前置）', () => {
+    expect(gradeConvertedMilestone({ humanInfo: {}, businessInfo: { requirements: 'AI 平台' } }).milestone).toBe(0)
   })
 })

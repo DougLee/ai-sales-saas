@@ -102,17 +102,21 @@ export default function ProjectForm({ open, onClose, initialData, prefilledCompa
             onChange={(e) => setAmount(e.target.value)}
             placeholder="0"
           />
-          <FormSelect label="当前里程碑" value={milestone} onChange={(e) => setMilestone(Number(e.target.value))}>
-            <option value={0}>初识客户</option>
-            <option value={1}>明确痛点</option>
-            <option value={2}>明确需求</option>
-            <option value={3}>明确经费</option>
-            <option value={4}>明确方案</option>
-            <option value={5}>明确价格</option>
-            <option value={6}>协助采购</option>
-            <option value={7}>招标确认</option>
-            <option value={8}>投标中标</option>
-          </FormSelect>
+          {/* ADR-0004 决策 3：编辑态禁改里程碑——推进统一走详情页/看板 gate 校验入口，杜绝表单跨级后门 */}
+          {initialData?.id ? (
+            <div>
+              <p className="mb-1 text-sm font-medium text-text-secondary">当前里程碑</p>
+              <p className="rounded-lg border border-border bg-surface-elevated px-3 py-2 text-sm text-text-secondary">
+                M{milestone}（推进/回退请在商机详情操作，需通过门禁校验）
+              </p>
+            </div>
+          ) : (
+            <FormSelect label="初始里程碑" value={milestone} onChange={(e) => setMilestone(Number(e.target.value))}>
+              <option value={0}>初识客户</option>
+              <option value={1}>明确痛点</option>
+              <option value={2}>明确需求</option>
+            </FormSelect>
+          )}
         </div>
         <div>
           <label className="mb-1 block text-sm font-medium text-text-secondary">紧急度</label>

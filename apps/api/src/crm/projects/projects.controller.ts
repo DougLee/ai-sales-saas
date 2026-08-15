@@ -20,8 +20,9 @@ function getUser(req: FastifyRequest) {
 const VALID_PROJECT_TRANSITIONS: Record<string, string[]> = {
   following: ['stale', 'won', 'lost'],
   stale: ['following', 'won', 'lost'],
-  won: [],
-  lost: [],
+  // ADR-0004 决策 8：赢单/流失可重新激活（lost 复活在销售现实常见）
+  won: ['following'],
+  lost: ['following'],
 }
 
 function canTransitionProjectStatus(from: string, to: string): boolean {
@@ -181,6 +182,14 @@ export async function update(req: FastifyRequest<{ Params: { id: string } }>, re
       return reply.status(400).send({ success: false, error: '输单时必须填写输单原因' })
     }
 
+    // ADR-0004 决策 4：回退必须填原因（回退往往意味着需求变化/报价被拒，是最该留证据的动作）
+    if (body.milestone != null && body.milestone < existing.milestone && !body.backReason?.trim()) {
+      return reply.status(400).send({
+        success: false,
+        error: `里程碑回退（M${existing.milestone} → M${body.milestone}）需要填写原因`,
+      })
+    }
+
     // 里程碑推进校验
     if (body.milestone != null && body.milestone !== existing.milestone) {
       const gates = await loadMilestoneGates(prisma, user.tenantId)
@@ -194,7 +203,7 @@ export async function update(req: FastifyRequest<{ Params: { id: string } }>, re
       }
     }
 
-    const { notes, ...rest } = body
+    const { notes, backReason, ...rest } = body
     const data: Record<string, unknown> = { ...rest }
     if (notes !== undefined) {
       const current = await prisma.project.findFirst({ where: { id: req.params.id, deletedAt: null }, select: { humanInfo: true } })
@@ -204,6 +213,11 @@ export async function update(req: FastifyRequest<{ Params: { id: string } }>, re
       where: { id: req.params.id },
       data,
     })
+
+    // 重新激活（ADR-0004 决策 8）：清 closedAt 恢复在途
+    if (body.status === 'following' && existing.status !== 'following' && existing.closedAt) {
+      await prisma.project.update({ where: { id: project.id }, data: { closedAt: null } })
+    }
 
     // 赢单/输单后同步客户状态与关闭时间
     if ((body.status === 'won' || body.status === 'lost') && existing.status !== body.status) {
@@ -229,10 +243,10 @@ export async function update(req: FastifyRequest<{ Params: { id: string } }>, re
         projectId: project.id,
         eventType: ActivityEventType.MILESTONE_GATE_PASSED,
         eventSubtype: `M${existing.milestone} → M${body.milestone}`,
-        eventData: { from: existing.milestone, to: body.milestone, name: project.name },
+        eventData: { from: existing.milestone, to: body.milestone, name: project.name, ...(backReason ? { backReason } : {}) },
         sourceType: 'user',
         sourceId: user.id,
-        sourceLabel: '里程碑 gate 校验通过',
+        sourceLabel: body.milestone < existing.milestone ? '里程碑回退' : '里程碑 gate 校验通过',
       })
       await recordTimelineEvent(prisma, {
         tenantId: user.tenantId,
@@ -240,10 +254,10 @@ export async function update(req: FastifyRequest<{ Params: { id: string } }>, re
         projectId: project.id,
         eventType: ActivityEventType.MILESTONE_ADVANCED,
         eventSubtype: `M${existing.milestone} → M${body.milestone}`,
-        eventData: { from: existing.milestone, to: body.milestone, name: project.name },
+        eventData: { from: existing.milestone, to: body.milestone, name: project.name, ...(backReason ? { backReason } : {}) },
         sourceType: 'user',
         sourceId: user.id,
-        sourceLabel: '里程碑推进',
+        sourceLabel: body.milestone < existing.milestone ? '里程碑回退' : '里程碑推进',
       })
     }
     if (body.status && body.status !== existing.status) {

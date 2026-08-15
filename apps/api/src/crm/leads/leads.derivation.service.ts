@@ -104,6 +104,29 @@ export function computeLeadDerivations(lead: {
   }
 }
 
+/**
+ * 转化即定级（ADR-0004 决策 7 / 总纲决策⑥）：按已确认证据核定商机初始里程碑，封顶 M2。
+ * 口径与 gate 一致：M1 需 painPoints≥1，M2 需 requirements 非空（M1 为 M2 前置）。
+ * M3+ 必须在商机阶段重新取证（预算等财务证据转化后由拜访/人工补）。
+ */
+export function gradeConvertedMilestone(lead: {
+  humanInfo?: Record<string, unknown> | null
+  businessInfo?: Record<string, unknown> | null
+}): { milestone: number; evidence: string[] } {
+  const humanInfo = (lead.humanInfo as Record<string, unknown> | null) || {}
+  const businessInfo = (lead.businessInfo as Record<string, unknown> | null) || {}
+  const pains = Array.isArray(humanInfo.painPoints) ? (humanInfo.painPoints as unknown[]) : []
+  const hasRequirements = !!(businessInfo.requirements as string | undefined)?.trim?.()
+
+  if (pains.length >= 1 && hasRequirements) {
+    return { milestone: 2, evidence: [`痛点 ${pains.length} 条`, '需求已量化'] }
+  }
+  if (pains.length >= 1) {
+    return { milestone: 1, evidence: [`痛点 ${pains.length} 条`] }
+  }
+  return { milestone: 0, evidence: [] }
+}
+
 export interface LeadMetrics {
   following: number
   weeklyNew: number
