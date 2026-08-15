@@ -12,6 +12,7 @@ import { findExpert } from './experts/registry.js'
 import { resolveSkills } from './core/agent-skill-router.js'
 import { skillRegistry } from './skills/index.js'
 import { extractRecommendedCandidates, handleCustomerEnroll } from './skills/crm/customer-enroll.util.js'
+import { captureBidResultFromChat, captureGateSignalsFromChat } from './skills/crm/gate-extraction.util.js'
 import { semanticSearch } from '../knowledge-base/kb-embedder.js'
 import { AppError } from '../errors/app-error.js'
 import { ErrorCode } from '../errors/error-codes.js'
@@ -383,6 +384,41 @@ export async function chat(req: FastifyRequest, reply: FastifyReply) {
         }
       } catch (e) {
         chatLogger.warn({ err: e }, 'candidate extraction/persist failed')
+      }
+    }
+
+    // #30 gate 字段多来源提取（响应已 end()，用户无感知；只建待确认项不直写，失败静默不阻塞对话）
+    const gateProjectId =
+      body.pageContext?.entityType === 'project' && body.pageContext.entityId
+        ? body.pageContext.entityId
+        : undefined
+    if (gateProjectId) {
+      const gateArgs = {
+        sessionId,
+        tenantId,
+        userId,
+        prisma: tenantPrisma,
+        projectId: gateProjectId,
+      }
+      // 链路一：招投标监测回答中出现明确我方中标表述 → evidence.bidResult 待确认条目
+      if (intent.intent === 'bidding_monitor') {
+        try {
+          await captureBidResultFromChat({ ...gateArgs, assistantText })
+        } catch (e) {
+          chatLogger.warn({ err: e, projectId: gateProjectId }, 'bid_result extraction failed')
+        }
+      }
+      // 链路二：讨论类对话（含项目上下文）中聊到的预算/报价/拍板人/需求指标 → gate 字段待确认条目
+      if (intent.intent === 'visit_analysis' || intent.intent === 'general_chat') {
+        try {
+          await captureGateSignalsFromChat({
+            ...gateArgs,
+            userMessage: lastMessage.content,
+            assistantText,
+          })
+        } catch (e) {
+          chatLogger.warn({ err: e, projectId: gateProjectId }, 'gate signal extraction failed')
+        }
       }
     }
 
