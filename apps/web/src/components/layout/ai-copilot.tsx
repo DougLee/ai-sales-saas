@@ -334,18 +334,21 @@ export default function AiCopilot() {
     }
   }, [width])
 
+  // 拖拽调整宽度（Pointer Events：鼠标/触屏/触控笔统一处理，#20 触屏 resize）
   useEffect(() => {
     if (!isResizing) return
-    const onMove = (e: MouseEvent) => {
+    const onMove = (e: PointerEvent) => {
       const newWidth = window.innerWidth - e.clientX
       setWidth(Math.min(Math.max(newWidth, 280), 800))
     }
     const onUp = () => setIsResizing(false)
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onUp)
     return () => {
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onUp)
     }
   }, [isResizing])
 
@@ -486,9 +489,15 @@ export default function AiCopilot() {
   return (
     <aside className="relative flex flex-col border-l border-border bg-surface" style={{ width }}>
       <div
-        onMouseDown={() => setIsResizing(true)}
-        className={`absolute left-0 top-0 z-10 h-full cursor-col-resize transition-colors ${
-          isResizing ? 'w-1 bg-primary/40' : 'w-2 bg-border hover:bg-primary/30'
+        onPointerDown={(e) => {
+          // 捕获指针：触屏拖拽时浏览器不会派发后续 pointermove 到 window，
+          // 必须 setPointerCapture 才能持续收到移动事件
+          e.currentTarget.setPointerCapture(e.pointerId)
+          setIsResizing(true)
+        }}
+        style={{ touchAction: 'none' }}
+        className={`absolute left-0 top-0 z-10 h-full w-2 cursor-col-resize touch-none select-none transition-colors ${
+          isResizing ? 'bg-primary/40' : 'bg-border hover:bg-primary/30'
         }`}
         title="拖拽调整宽度"
       />

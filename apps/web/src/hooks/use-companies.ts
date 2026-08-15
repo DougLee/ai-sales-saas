@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { get, post, put, del } from '../lib/api.js'
 import { toast } from '../lib/toast.js'
+import { useDetailDrawerActive, useListPollingPaused } from './use-detail-drawer.js'
 
 export interface Company {
   id: string
@@ -97,6 +98,8 @@ export interface CompanyListParams {
 }
 
 export function useCompanies(params?: CompanyListParams) {
+  // #20 轮询互斥：详情 drawer 打开时暂停列表轮询
+  const pollingPaused = useListPollingPaused()
   const queryString = new URLSearchParams()
   if (params?.search) queryString.set('search', params.search)
   if (params?.pool) queryString.set('pool', params.pool)
@@ -115,7 +118,7 @@ export function useCompanies(params?: CompanyListParams) {
       get<{ items: Company[]; total?: number; counts?: Record<string, number>; page?: number; pageSize?: number }>(
         `/api/companies?${queryString.toString()}`
       ),
-    refetchInterval: 30_000,
+    refetchInterval: pollingPaused ? false : 30_000,
   })
 }
 
@@ -133,6 +136,8 @@ export function useCompanyMetrics() {
         conversionRate1: number
         pendingVerify: number
       }>('/api/companies/metrics'),
+    // #20：失效矩阵已保证 mutation 后精确失效，轮询窗口内的 refocus 重拉没必要
+    staleTime: 30_000,
   })
 }
 
@@ -163,6 +168,8 @@ export function useAssignableUsers(enabled?: boolean) {
 }
 
 export function useCompany(id?: string) {
+  // #20：详情激活期间登记，供列表 hook 暂停轮询
+  useDetailDrawerActive(!!id)
   return useQuery({
     queryKey: ['company', id],
     queryFn: () => get<CompanyDetail>(`/api/companies/${id}`),

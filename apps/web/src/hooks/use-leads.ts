@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { get, post, put, del } from '../lib/api.js'
 import { invalidateLeadRelated, invalidateProjectRelated, invalidateCompanyRelated } from '../lib/invalidation.js'
 import { toast } from '../lib/toast.js'
+import { useDetailDrawerActive, useListPollingPaused } from './use-detail-drawer.js'
 
 export interface LeadHumanInfo {
   decisionMaker?: string
@@ -104,6 +105,8 @@ export interface ScoreBreakdown {
 }
 
 export function useLeads(params?: { status?: string; statusIn?: string; ready?: string; grade?: string; source?: string; search?: string; page?: number }) {
+  // #20 轮询互斥：详情 drawer 打开时暂停列表轮询
+  const pollingPaused = useListPollingPaused()
   const queryString = new URLSearchParams()
   if (params?.status) queryString.set('status', params.status)
   if (params?.statusIn) queryString.set('statusIn', params.statusIn)
@@ -119,11 +122,13 @@ export function useLeads(params?: { status?: string; statusIn?: string; ready?: 
       get<{ items: Lead[]; total: number; page: number; pageSize: number }>(
         `/api/leads?${queryString.toString()}`
       ),
-    refetchInterval: 30_000,
+    refetchInterval: pollingPaused ? false : 30_000,
   })
 }
 
 export function useLead(id?: string) {
+  // #20：详情激活期间登记，供列表 hook 暂停轮询
+  useDetailDrawerActive(!!id)
   return useQuery({
     queryKey: ['lead', id],
     queryFn: () => get<Lead>(`/api/leads/${id}`),
@@ -145,6 +150,8 @@ export function useLeadMetrics() {
         conversionRate2: number
         counts: { following: number; convertible: number; nurturing: number; converted: number; lost: number }
       }>('/api/leads/metrics'),
+    // #20：失效矩阵已保证 mutation 后精确失效，轮询窗口内的 refocus 重拉没必要
+    staleTime: 30_000,
   })
 }
 

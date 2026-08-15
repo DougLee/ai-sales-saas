@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { get, post, put, del } from '../lib/api.js'
 import { toast } from '../lib/toast.js'
+import { useDetailDrawerActive, useListPollingPaused } from './use-detail-drawer.js'
 
 /**
  * 等待客户六类（V6.1 §7.2）：标记后 daily-scan 跳过停滞检测（倒计时暂停）
@@ -132,10 +133,14 @@ export function useProjectMetrics() {
         waitingCount: number
         conversionRate3: number
       }>('/api/projects/metrics'),
+    // #20：失效矩阵已保证 mutation 后精确失效，轮询窗口内的 refocus 重拉没必要
+    staleTime: 30_000,
   })
 }
 
 export function useProjects(params?: { milestone?: number; urgency?: string; search?: string; page?: number; pageSize?: number }) {
+  // #20 轮询互斥：详情 drawer 打开时暂停列表轮询
+  const pollingPaused = useListPollingPaused()
   const queryString = new URLSearchParams()
   if (params?.milestone != null) queryString.set('milestone', String(params.milestone))
   if (params?.urgency) queryString.set('urgency', params.urgency)
@@ -149,7 +154,7 @@ export function useProjects(params?: { milestone?: number; urgency?: string; sea
       get<{ items: Project[]; total: number; page: number; pageSize: number }>(
         `/api/projects?${queryString.toString()}`
       ),
-    refetchInterval: 30_000,
+    refetchInterval: pollingPaused ? false : 30_000,
   })
 }
 
@@ -212,6 +217,8 @@ export function useUpdateGateField(projectId?: string) {
 }
 
 export function useProject(id?: string) {
+  // #20：详情激活期间登记，供列表 hook 暂停轮询
+  useDetailDrawerActive(!!id)
   return useQuery({
     queryKey: ['project', id],
     queryFn: () => get<Project>(`/api/projects/${id}`),
