@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
-import { Plus, Search, Loader2, Trash2, Users, Building2, Phone, MapPin, FolderOpen, User, ArrowRight, Pencil, Calendar, Flag, Hand, UserX, Database, AlertTriangle, Target, CheckCircle2, XCircle, TrendingUp, GitMerge } from 'lucide-react'
-import { useCompanies, useDeleteCompany, useClaimCompany, useAssignCompany, useUpdateCompanyStatus, useCompanyMissingFields, useCompanyChangeHistory, useMergeCompany, useCompanyDuplicates } from '../hooks/use-companies.js'
+import { Plus, Search, Loader2, Trash2, Users, Phone, MapPin, FolderOpen, User, ArrowRight, Pencil, Calendar, Flag, Hand, UserX, AlertTriangle, GitMerge, Bot } from 'lucide-react'
+import { useCompanies, useDeleteCompany, useClaimCompany, useAssignCompany, useUpdateCompanyStatus, useCompanyMissingFields, useCompanyChangeHistory, useMergeCompany, useCompanyDuplicates, useCompanyMetrics, useBatchCompany, useAssignableUsers } from '../hooks/use-companies.js'
 import { useCompany } from '../hooks/use-companies.js'
 import { useCanAssign } from '../hooks/use-permission.js'
 import { useDebouncedValue } from '../hooks/use-debounced-value.js'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { entityRouteTo } from '../lib/entity-links.js'
+import { INDUSTRY_OPTIONS, SOURCE_OPTIONS, LEVEL_OPTIONS, sourceLabel, industryLabel } from '../lib/company-options.js'
 import Drawer from '../components/ui/drawer.js'
 import VisitDetailDrawer from '../components/visits/visit-detail-drawer.js'
 import CustomerForm from '../components/forms/customer-form.js'
@@ -44,20 +45,6 @@ const decisionRoleLabels: Record<string, string> = {
   DECISION_MAKER: '决策者',
 }
 
-const STATUS_OPTIONS = [
-  { key: 'all', label: '全部', icon: Database },
-  { key: 'target', label: '目标客户', icon: Target },
-  { key: 'following', label: '在跟进', icon: TrendingUp },
-  { key: 'won', label: '成交', icon: CheckCircle2 },
-  { key: 'lost', label: '流失', icon: XCircle },
-] as const
-
-const POOL_OPTIONS = [
-  { key: 'all', label: '全部', icon: Database },
-  { key: 'open', label: '公海池', icon: Users },
-  { key: 'mine', label: '我的客户', icon: User },
-] as const
-
 const statusLabels: Record<string, string> = {
   target: '目标客户',
   following: '在跟进客户',
@@ -72,20 +59,66 @@ const statusBadgeClasses: Record<string, string> = {
   lost: 'bg-text-tertiary/10 text-text-tertiary',
 }
 
+/** 相对时间：N 天前 / 昨天 / 今天 */
+function daysIn(iso: string): number {
+  return Math.floor((Date.now() - new Date(iso).getTime()) / 86400000)
+}
+function daysAgoText(iso: string): string {
+  const d = daysIn(iso)
+  if (d <= 0) return '今天'
+  if (d === 1) return '昨天'
+  if (d < 30) return `${d} 天前`
+  return `${Math.floor(d / 30)} 个月前`
+}
+
+/** 视图页签：状态即视图（公海池 = 无负责人），计数挂页签上 */
+const VIEW_TABS = [
+  { key: 'target', label: '目标客户' },
+  { key: 'following', label: '跟进中' },
+  { key: 'won', label: '已成交' },
+  { key: 'open', label: '公海池' },
+  { key: 'all', label: '全部客户' },
+] as const
+
 export default function Customers() {
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebouncedValue(search)
-  const [pool, setPool] = useState('all')
+  const [tab, setTab] = useState<string>('target')
   const [detailId, setDetailId] = useState<string | undefined>(undefined)
   const [openForm, setOpenForm] = useState(false)
   const [editingItem, setEditingItem] = useState<ReturnType<typeof useCompany>['data'] | undefined>(undefined)
   const [leadFormOpen, setLeadFormOpen] = useState(false)
+  const [leadFormCompanyId, setLeadFormCompanyId] = useState<string | undefined>(undefined)
   const [mergeOpen, setMergeOpen] = useState(false)
   const [visitDetailId, setVisitDetailId] = useState<string | undefined>(undefined)
   const [searchParams, setSearchParams] = useSearchParams()
-  const [statusFilter, setStatusFilter] = useState<string>(searchParams.get('status') || 'all')
+  // 列表筛选 + 分页（设计稿 20260813）
+  const [fIndustry, setFIndustry] = useState('')
+  const [fLevel, setFLevel] = useState('')
+  const [fRegion, setFRegion] = useState('')
+  const [fSource, setFSource] = useState('')
+  const [fOwnerId, setFOwnerId] = useState('')
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(20)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [batchOwnerId, setBatchOwnerId] = useState('')
 
-  const { data, isLoading, error } = useCompanies({ search: debouncedSearch, pool, status: statusFilter === 'all' ? undefined : statusFilter })
+  const { data, isLoading, error } = useCompanies({
+    search: debouncedSearch,
+    pool: tab === 'open' ? 'open' : undefined,
+    status: ['target', 'following', 'won', 'lost'].includes(tab) ? tab : undefined,
+    industry: fIndustry || undefined,
+    level: fLevel || undefined,
+    region: fRegion || undefined,
+    source: fSource || undefined,
+    ownerId: fOwnerId || undefined,
+    page,
+    pageSize,
+  })
+  const { data: metrics } = useCompanyMetrics()
+  const batch = useBatchCompany()
+  const canAssign = useCanAssign()
+  const { data: assignableUsers } = useAssignableUsers(canAssign && selectedIds.size > 0)
   const { data: detailData, isLoading: detailLoading } = useCompany(detailId)
   const { data: missingFields } = useCompanyMissingFields(detailId)
   const { data: changeHistory } = useCompanyChangeHistory(detailId)
@@ -111,14 +144,72 @@ export default function Customers() {
   )
   const navigate = useNavigate()
 
-  const canAssign = useCanAssign()
-
+  // URL ?status= 同步页签（侧栏「目标客户」入口等仍用此参数）
   useEffect(() => {
     const status = searchParams.get('status')
-    if (status && STATUS_OPTIONS.some((s) => s.key === status)) {
-      setStatusFilter(status)
+    if (status && VIEW_TABS.some((t) => t.key === status)) {
+      setTab(status)
+    } else if (!status) {
+      setTab('target')
     }
   }, [searchParams])
+
+  // 筛选/页签变化时回到第一页，并清空勾选
+  useEffect(() => {
+    setPage(1)
+    setSelectedIds(new Set())
+  }, [debouncedSearch, tab, fIndustry, fLevel, fRegion, fSource, fOwnerId, pageSize])
+
+  const companies = data?.items || []
+  const totalCount = data?.total ?? companies.length
+  const totalPages = Math.max(Math.ceil(totalCount / pageSize), 1)
+  const counts = data?.counts || {}
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+  const allSelected = companies.length > 0 && companies.every((c) => selectedIds.has(c.id))
+  const toggleSelectAll = () => {
+    setSelectedIds(allSelected ? new Set() : new Set(companies.map((c) => c.id)))
+  }
+
+  const handleBatchClaim = async () => {
+    if (selectedIds.size === 0) return
+    if (!(await confirmDialog.confirm({
+      title: '批量认领',
+      description: `将认领选中的 ${selectedIds.size} 家客户（已有负责人的将跳过），您将成为其负责人。`,
+      confirmLabel: '认领',
+    }))) return
+    batch.mutate(
+      { action: 'claim', ids: [...selectedIds] },
+      { onSuccess: () => setSelectedIds(new Set()) },
+    )
+  }
+
+  const handleBatchAssign = async () => {
+    if (selectedIds.size === 0 || !batchOwnerId) return
+    const ownerName = assignableUsers?.items.find((u) => u.id === batchOwnerId)?.name || '所选成员'
+    if (!(await confirmDialog.confirm({
+      title: '批量分配负责人',
+      description: `将选中的 ${selectedIds.size} 家客户分配给「${ownerName}」。`,
+      confirmLabel: '分配',
+    }))) return
+    batch.mutate(
+      { action: 'assign', ids: [...selectedIds], ownerId: batchOwnerId },
+      { onSuccess: () => { setSelectedIds(new Set()); setBatchOwnerId('') } },
+    )
+  }
+
+  /** 行内「建线索」：直接开预填客户的线索表单（ADR-0001 决策 4，不二次确认） */
+  const openLeadForm = (companyId: string) => {
+    setLeadFormCompanyId(companyId)
+    setLeadFormOpen(true)
+  }
 
   const handleDelete = async (id: string) => {
     if (!(await confirmDialog.confirm({
@@ -165,14 +256,20 @@ export default function Customers() {
     )
   }
 
-  const companies = data?.items || []
-
   return (
     <div className="space-y-4">
+      {/* 页头 */}
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold text-text-primary">
-          {statusFilter === 'target' ? '目标客户' : '客户管理'}
-        </h2>
+        <div className="flex items-center gap-3">
+          <h2 className="text-xl font-semibold text-text-primary">
+            {tab === 'target' ? '目标客户池' : '客户管理'}
+          </h2>
+          {tab === 'target' && (
+            <span className="rounded-full bg-warning/10 px-2 py-0.5 text-[11px] font-semibold text-warning">
+              L0 · 销售的起点
+            </span>
+          )}
+        </div>
         <div className="flex gap-2">
           <AiEntryButton
             prompt="帮我分析当前客户池，哪些客户有商机潜力"
@@ -180,16 +277,6 @@ export default function Customers() {
             variant="primary"
             className="rounded-xl px-4 py-2 text-sm"
           />
-          <div className="relative">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="搜索客户名称、地区..."
-              className="h-10 rounded-xl border border-border bg-surface pl-9 pr-4 text-sm text-text-primary outline-none placeholder:text-text-tertiary focus:border-primary"
-            />
-          </div>
           <button
             onClick={() => { setEditingItem(undefined); setOpenForm(true) }}
             className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90"
@@ -199,159 +286,348 @@ export default function Customers() {
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
-        {STATUS_OPTIONS.map((s) => (
+      {/* 视图页签：状态即视图，计数挂页签上 */}
+      <div className="flex items-center gap-1 border-b border-border">
+        {VIEW_TABS.map((t) => (
           <button
-            key={s.key}
+            key={t.key}
             onClick={() => {
-              setStatusFilter(s.key)
-              if (s.key === 'all') {
+              setTab(t.key)
+              if (t.key === 'target') {
                 setSearchParams({}, { replace: true })
-              } else {
-                setSearchParams({ status: s.key }, { replace: true })
               }
             }}
-            className={`flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs transition-colors ${
-              statusFilter === s.key
-                ? 'bg-primary/10 text-primary font-medium'
-                : 'text-text-tertiary hover:bg-surface-elevated hover:text-text-secondary'
+            className={`-mb-px border-b-2 px-3.5 py-2 text-sm transition-colors ${
+              tab === t.key
+                ? 'border-primary font-medium text-primary'
+                : 'border-transparent text-text-secondary hover:text-text-primary'
             }`}
           >
-            <s.icon size={12} /> {s.label}
+            {t.label}
+            <span className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[11px] ${
+              tab === t.key ? 'bg-primary/10 text-primary' : 'bg-surface-elevated text-text-tertiary'
+            }`}>
+              {t.key === 'open' ? (counts.open ?? '-') : (counts[t.key] ?? '-')}
+            </span>
           </button>
         ))}
       </div>
 
-      <div className="flex items-center gap-2">
-        {POOL_OPTIONS.map((p) => {
-          const isOpenPool = p.key === 'open'
-          return (
-            <button
-              key={p.key}
-              onClick={() => setPool(p.key)}
-              className={`flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs transition-colors ${
-                pool === p.key
-                  ? isOpenPool
-                    ? 'bg-warning/10 text-warning font-medium'
-                    : 'bg-primary/10 text-primary font-medium'
-                  : isOpenPool
-                    ? 'text-warning hover:bg-warning/5'
-                    : 'text-text-tertiary hover:bg-surface-elevated hover:text-text-secondary'
-              }`}
-            >
-              <p.icon size={12} /> {p.label}
-            </button>
-          )
-        })}
-      </div>
-
-      {pool === 'open' && (
-        <div className="rounded-xl border border-warning/20 bg-warning/5 p-3 text-xs text-warning">
-          公海池中的客户尚未被任何销售人员认领。点击客户右侧的「认领」按钮即可将其纳入您的客户池。
+      {/* 指标条（L0 专属）：漏斗过程指标直接顶在页面上 */}
+      {tab === 'target' && metrics && (
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <div className="rounded-xl border border-border bg-surface p-3.5">
+            <p className="text-xl font-bold text-text-primary">
+              {metrics.total}
+              {metrics.weeklyNew > 0 && (
+                <span className="ml-1.5 text-[11px] font-medium text-success">本周 +{metrics.weeklyNew}</span>
+              )}
+            </p>
+            <p className="mt-0.5 text-xs text-text-secondary">池子总量（周新增 = 团队第一过程指标）</p>
+          </div>
+          <div className="rounded-xl border border-border bg-surface p-3.5">
+            <p className="text-xl font-bold text-text-primary">
+              {metrics.reached}
+              <span className="ml-1.5 text-[11px] font-normal text-text-tertiary">{metrics.reachedRate}%</span>
+            </p>
+            <p className="mt-0.5 text-xs text-text-secondary">已触达（至少一次拜访）</p>
+          </div>
+          <div className="rounded-xl border border-border bg-surface p-3.5">
+            <p className="text-xl font-bold text-success">
+              {metrics.producedLeads}
+              <span className="ml-1.5 text-[11px] font-medium text-success">转化率① {metrics.conversionRate1}%</span>
+            </p>
+            <p className="mt-0.5 text-xs text-text-secondary">已产出线索（目标客户 → 线索）</p>
+          </div>
+          <div className="rounded-xl border border-border bg-surface p-3.5">
+            <p className={`text-xl font-bold ${metrics.pendingVerify > 0 ? 'text-warning' : 'text-text-primary'}`}>
+              {metrics.pendingVerify}
+            </p>
+            <p className="mt-0.5 text-xs text-text-secondary">待核实（小销收集超 7 天未补充）</p>
+          </div>
         </div>
       )}
 
-      <div className="rounded-2xl border border-border bg-surface">
-        <div className="flex items-center justify-between border-b border-border px-6 py-4">
-          <span className="text-sm text-text-tertiary">
-            {isLoading ? '加载中...' : `共 ${data?.total ?? companies.length} 家客户${(data?.total ?? 0) > companies.length ? '（仅显示前 100 家，请用搜索缩小范围）' : ''}`}
+      {/* 筛选栏 */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative min-w-[220px] flex-1">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="搜索客户名称 / 联系人 / 电话"
+            className="h-9 w-full rounded-lg border border-border bg-surface pl-9 pr-3 text-sm text-text-primary outline-none placeholder:text-text-tertiary focus:border-primary"
+          />
+        </div>
+        <select value={fIndustry} onChange={(e) => setFIndustry(e.target.value)} className="h-9 rounded-lg border border-border bg-surface px-2 text-xs text-text-secondary outline-none focus:border-primary cursor-pointer" title="行业">
+          <option value="">行业：全部</option>
+          {INDUSTRY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+        <select value={fLevel} onChange={(e) => setFLevel(e.target.value)} className="h-9 rounded-lg border border-border bg-surface px-2 text-xs text-text-secondary outline-none focus:border-primary cursor-pointer" title="等级">
+          <option value="">等级：全部</option>
+          {LEVEL_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+        <select value={fRegion} onChange={(e) => setFRegion(e.target.value)} className="h-9 rounded-lg border border-border bg-surface px-2 text-xs text-text-secondary outline-none focus:border-primary cursor-pointer" title="地区">
+          <option value="">地区：全部</option>
+          {[...new Set(companies.map((c) => c.region).filter(Boolean))].map((r) => (
+            <option key={r} value={r}>{r}</option>
+          ))}
+        </select>
+        <select value={fSource} onChange={(e) => setFSource(e.target.value)} className="h-9 rounded-lg border border-border bg-surface px-2 text-xs text-text-secondary outline-none focus:border-primary cursor-pointer" title="来源">
+          <option value="">来源：全部</option>
+          {SOURCE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+        <select value={fOwnerId} onChange={(e) => setFOwnerId(e.target.value)} className="h-9 rounded-lg border border-border bg-surface px-2 text-xs text-text-secondary outline-none focus:border-primary cursor-pointer" title="负责人">
+          <option value="">负责人：全部</option>
+          <option value="none">未分配</option>
+          {[...new Map(companies.filter((c) => c.owner).map((c) => [c.owner!.id, c.owner!.name] as const)).entries()].map(([id, name]) => (
+            <option key={id} value={id}>{name}</option>
+          ))}
+        </select>
+        {(fIndustry || fLevel || fRegion || fSource || fOwnerId) && (
+          <button
+            onClick={() => { setFIndustry(''); setFLevel(''); setFRegion(''); setFSource(''); setFOwnerId('') }}
+            className="text-xs text-primary hover:underline"
+          >
+            清除筛选
+          </button>
+        )}
+      </div>
+
+      {/* 批量操作条（勾选后浮现） */}
+      {selectedIds.size > 0 && (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-primary/20 bg-primary/5 px-3.5 py-2 text-xs text-primary">
+          <span>已选 <b>{selectedIds.size}</b> 家</span>
+          <button onClick={handleBatchClaim} disabled={batch.isPending} className="font-medium hover:underline disabled:opacity-50">
+            {batch.isPending ? '处理中...' : '批量认领'}
+          </button>
+          {canAssign && (
+            <span className="flex items-center gap-2">
+              <select value={batchOwnerId} onChange={(e) => setBatchOwnerId(e.target.value)} className="h-7 rounded-md border border-border bg-surface px-1.5 text-xs text-text-secondary outline-none focus:border-primary cursor-pointer">
+                <option value="">选择成员…</option>
+                {assignableUsers?.items.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+              <button onClick={handleBatchAssign} disabled={batch.isPending || !batchOwnerId} className="font-medium hover:underline disabled:opacity-50">
+                分配负责人
+              </button>
+            </span>
+          )}
+          <span className="flex items-center gap-3 text-text-tertiary">
+            <span className="cursor-not-allowed opacity-50" title="后续版本支持">批量导出</span>
+            <span className="cursor-not-allowed opacity-50" title="后续版本支持">移入公海</span>
           </span>
+          <button onClick={() => setSelectedIds(new Set())} className="ml-auto text-text-secondary hover:underline">
+            取消选择
+          </button>
+        </div>
+      )}
+
+      {/* 数据表 */}
+      <div className="overflow-hidden rounded-2xl border border-border bg-surface">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[1080px] border-collapse text-sm">
+            <thead>
+              <tr className="border-y border-border bg-surface-elevated/60 text-left text-xs font-medium text-text-secondary">
+                <th className="w-10 px-3 py-2.5">
+                  <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} className="cursor-pointer" aria-label="全选" />
+                </th>
+                <th className="px-3 py-2.5">客户名称</th>
+                <th className="px-3 py-2.5">等级</th>
+                <th className="px-3 py-2.5">行业</th>
+                <th className="px-3 py-2.5">地区</th>
+                <th className="px-3 py-2.5">联系人</th>
+                <th className="px-3 py-2.5">来源</th>
+                <th className="px-3 py-2.5">负责人</th>
+                <th className="px-3 py-2.5">完整度</th>
+                <th className="px-3 py-2.5">最近动态</th>
+                <th className="px-3 py-2.5 text-right">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {companies.map((company) => {
+                const days = daysAgoText(company.updatedAt)
+                const stale = daysIn(company.updatedAt) > 30
+                const needVerify = company.source === 'ai_recommendation' && daysIn(company.updatedAt) > 7
+                const levelOpt = LEVEL_OPTIONS.find((l) => l.value === company.level)
+                return (
+                  <tr
+                    key={company.id}
+                    className="border-b border-border/60 transition-colors last:border-0 hover:bg-primary/[0.03]"
+                  >
+                    <td className="px-3 py-2.5">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(company.id)}
+                        onChange={() => toggleSelect(company.id)}
+                        className="cursor-pointer"
+                        aria-label={`选择 ${company.name}`}
+                      />
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <button
+                        onClick={() => setDetailId(company.id)}
+                        className="font-medium text-primary hover:underline"
+                      >
+                        {company.name}
+                      </button>
+                      {company.source === 'ai_recommendation' && (
+                        <span className="ml-1.5 inline-flex items-center gap-0.5 rounded-md border border-[#ddd6fe] bg-[#f5f3ff] px-1 text-[10px] font-medium text-[#7c3aed]" title="小销 AI 建档，待核实">
+                          <Bot size={9} /> 小销
+                        </span>
+                      )}
+                      <p className="text-[11px] text-text-tertiary">{company.scale || '规模待补充'}</p>
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <span className="flex items-center gap-1.5 text-xs font-semibold">
+                        <i className={`h-2 w-2 rounded-full ${levelOpt?.dot || 'bg-text-tertiary/30'}`} />
+                        {company.level || '未定'}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5 text-xs text-text-secondary">
+                      {industryLabel(company.industry, industryLabels)}
+                    </td>
+                    <td className="px-3 py-2.5 text-xs text-text-secondary">{company.region || '-'}</td>
+                    <td className="px-3 py-2.5">
+                      {company.contactPerson ? (
+                        <>
+                          <p className="text-xs text-text-primary">{company.contactPerson}</p>
+                          {company.contactPhone && <p className="text-[11px] text-text-tertiary">{company.contactPhone}</p>}
+                        </>
+                      ) : (
+                        <span className="text-[11px] text-text-tertiary">待补充</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2.5 text-xs text-text-secondary">{sourceLabel(company.source)}</td>
+                    <td className="px-3 py-2.5 text-xs">
+                      {company.owner ? (
+                        <span className="text-text-secondary">{company.owner.name}</span>
+                      ) : (
+                        <span className="rounded-full bg-warning/10 px-2 py-0.5 text-[11px] text-warning">公海</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <div className="flex items-center gap-1.5">
+                        <div className="h-1.5 w-14 overflow-hidden rounded-full bg-border">
+                          <div
+                            className={`h-full rounded-full ${
+                              (company.completenessScore ?? 0) >= 70 ? 'bg-success' : (company.completenessScore ?? 0) >= 40 ? 'bg-warning' : 'bg-danger'
+                            }`}
+                            style={{ width: `${company.completenessScore ?? 0}%` }}
+                          />
+                        </div>
+                        <span className="text-xs text-text-secondary">{company.completenessScore ?? 0}%</span>
+                      </div>
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <p className="text-xs text-text-secondary">{days} · {company._count?.visits ?? 0} 拜访</p>
+                      {needVerify && <p className="flex items-center gap-0.5 text-[11px] text-warning"><AlertTriangle size={10} /> 待核实</p>}
+                      {!needVerify && stale && <p className="flex items-center gap-0.5 text-[11px] text-danger"><AlertTriangle size={10} /> 超期未跟进</p>}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <div className="flex items-center justify-end gap-2 whitespace-nowrap">
+                        {company.ownerId ? (
+                          <button
+                            onClick={() => openLeadForm(company.id)}
+                            className="rounded-md bg-success px-2 py-0.5 text-xs font-semibold text-white transition-colors hover:bg-success/90"
+                            title="从此客户创建线索（L0 → L1）"
+                          >
+                            建线索
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleClaim(company.id)}
+                            disabled={claim.isPending}
+                            className="rounded-md bg-warning px-2 py-0.5 text-xs font-semibold text-white transition-colors hover:bg-warning/90 disabled:opacity-50"
+                            title="认领到我的客户池"
+                          >
+                            认领
+                          </button>
+                        )}
+                        <button
+                          onClick={() => setDetailId(company.id)}
+                          className="text-xs text-primary hover:underline"
+                        >
+                          详情
+                        </button>
+                        <button
+                          onClick={() => handleDelete(company.id)}
+                          className="rounded-md p-1 text-text-tertiary transition-colors hover:bg-danger/10 hover:text-danger"
+                          title="删除客户"
+                          aria-label={`删除 ${company.name}`}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
         </div>
 
         {isLoading && <LoadingState />}
-
         {error && <ErrorState message={(error as Error).message || '加载失败'} />}
-
         {!isLoading && !error && companies.length === 0 && (
           <EmptyState
             icon={Users}
             title="暂无客户数据"
-            description="从线索转化或手动录入客户"
+            description={tab === 'target' ? '新建目标客户，或让小销从对话中收集建档' : '换个筛选条件试试'}
+            action={tab === 'target' ? (
+              <button
+                onClick={() => { setEditingItem(undefined); setOpenForm(true) }}
+                className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary/90"
+              >
+                <Plus size={16} /> 新建目标客户
+              </button>
+            ) : undefined}
           />
         )}
 
-        {!isLoading && !error && companies.length > 0 && (
-          <div className="divide-y divide-border">
-            {companies.map((company) => (
-              <div
-                key={company.id}
-                className="flex items-center justify-between px-6 py-4 hover:bg-surface-elevated/50 transition-colors cursor-pointer"
-                onClick={() => setDetailId(company.id)}
+        {/* 分页 */}
+        {!isLoading && totalCount > 0 && (
+          <div className="flex items-center gap-3 border-t border-border px-4 py-2.5 text-xs text-text-secondary">
+            <span>共 {totalCount} 家 · 每页</span>
+            <select
+              value={pageSize}
+              onChange={(e) => setPageSize(Number(e.target.value))}
+              className="h-7 rounded-md border border-border bg-surface px-1 text-xs outline-none focus:border-primary cursor-pointer"
+            >
+              <option value={20}>20</option>
+              <option value={50}>50</option>
+            </select>
+            <span>条</span>
+            <div className="ml-auto flex items-center gap-1">
+              <button
+                onClick={() => setPage((p) => Math.max(p - 1, 1))}
+                disabled={page <= 1}
+                className="rounded-md border border-border bg-surface px-2 py-0.5 transition-colors hover:border-primary/40 hover:text-primary disabled:opacity-40"
               >
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                    <Building2 size={18} />
-                  </div>
-                  <div>
-                    <p className="font-medium text-text-primary">{company.name}</p>
-                    <div className="flex items-center gap-3 text-sm text-text-secondary">
-                      {company.status && (
-                        <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${statusBadgeClasses[company.status] || 'bg-surface-elevated text-text-tertiary'}`}>
-                          {statusLabels[company.status] || company.status}
-                        </span>
-                      )}
-                      {company.industry && <span>{industryLabels[company.industry] || company.industry}</span>}
-                      {company.region && (
-                        <span className="flex items-center gap-1 text-text-tertiary">
-                          <MapPin size={12} /> {company.region}
-                        </span>
-                      )}
-                      {company.owner && (
-                        <span className="flex items-center gap-1 text-text-tertiary">
-                          <User size={12} /> {company.owner.name}
-                        </span>
-                      )}
-                      {!company.ownerId && (
-                        <span className="rounded-full bg-warning/10 px-1.5 py-0.5 text-[10px] text-warning">公海池</span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
-                  {company.completenessScore != null && (
-                    <div className="flex items-center gap-1 text-xs text-text-tertiary" title="客户完整度评分">
-                      <div className="h-1.5 w-16 overflow-hidden rounded-full bg-border">
-                        <div
-                          className={`h-full rounded-full ${
-                            company.completenessScore >= 85 ? 'bg-success' : company.completenessScore >= 60 ? 'bg-warning' : 'bg-danger'
-                          }`}
-                          style={{ width: `${company.completenessScore}%` }}
-                        />
-                      </div>
-                      {company.completenessScore}
-                    </div>
-                  )}
-                  {!company.ownerId && (
-                    <button
-                      onClick={() => handleClaim(company.id)}
-                      disabled={claim.isPending}
-                      className="flex items-center gap-1 rounded-lg bg-success px-2.5 py-1 text-xs font-medium text-white hover:bg-success/90 transition-colors disabled:opacity-50"
-                    >
-                      <Hand size={12} /> {claim.isPending ? '认领中...' : '认领'}
-                    </button>
-                  )}
-                  <AiEntryButton
-                    prompt={`请帮我分析这个客户：${company.name}${company.industry ? '（' + (industryLabels[company.industry] || company.industry) + '）' : ''}`}
-                    label="问小销"
-                    variant="ghost"
-                    entityType="customer"
-                    entityId={company.id}
-                  />
-                  <button
-                    onClick={() => navigate('/projects')}
-                    className="text-xs text-text-tertiary hover:text-primary hover:underline transition-colors"
-                  >
-                    {company._count?.projects ?? 0} 商机 · {company._count?.leads ?? 0} 线索 · {company._count?.visits ?? 0} 拜访
-                  </button>
-                  <button
-                    onClick={() => handleDelete(company.id)}
-                    className="rounded-lg p-1.5 text-text-tertiary hover:bg-danger/10 hover:text-danger transition-colors"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              </div>
-            ))}
+                ‹
+              </button>
+              {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                const start = Math.max(Math.min(page - 2, totalPages - 4), 1)
+                return start + i
+              }).filter((p) => p <= totalPages).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setPage(p)}
+                  className={`rounded-md border px-2 py-0.5 transition-colors ${
+                    p === page ? 'border-primary bg-primary text-white' : 'border-border bg-surface hover:border-primary/40 hover:text-primary'
+                  }`}
+                >
+                  {p}
+                </button>
+              ))}
+              <button
+                onClick={() => setPage((p) => Math.min(p + 1, totalPages))}
+                disabled={page >= totalPages}
+                className="rounded-md border border-border bg-surface px-2 py-0.5 transition-colors hover:border-primary/40 hover:text-primary disabled:opacity-40"
+              >
+                ›
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -879,8 +1155,8 @@ export default function Customers() {
       />
       <LeadForm
         open={leadFormOpen}
-        onClose={() => setLeadFormOpen(false)}
-        prefilledCompanyId={detailId}
+        onClose={() => { setLeadFormOpen(false); setLeadFormCompanyId(undefined) }}
+        prefilledCompanyId={leadFormCompanyId || detailId}
       />
 
       {confirmDialog.dialog}

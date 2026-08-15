@@ -15,6 +15,7 @@ export interface Company {
   contactPhone?: string
   notes?: string
   status?: string
+  source?: string
   completenessScore?: number
   dataConfidence?: string
   ownerId?: string | null
@@ -82,19 +83,82 @@ export interface CompanyDetail {
   _readonly?: boolean
 }
 
-export function useCompanies(params?: { search?: string; pool?: string; status?: string }) {
+export interface CompanyListParams {
+  search?: string
+  pool?: string
+  status?: string
+  industry?: string
+  level?: string
+  region?: string
+  source?: string
+  ownerId?: string
+  page?: number
+  pageSize?: number
+}
+
+export function useCompanies(params?: CompanyListParams) {
   const queryString = new URLSearchParams()
   if (params?.search) queryString.set('search', params.search)
   if (params?.pool) queryString.set('pool', params.pool)
   if (params?.status) queryString.set('status', params.status)
+  if (params?.industry) queryString.set('industry', params.industry)
+  if (params?.level) queryString.set('level', params.level)
+  if (params?.region) queryString.set('region', params.region)
+  if (params?.source) queryString.set('source', params.source)
+  if (params?.ownerId) queryString.set('ownerId', params.ownerId)
+  if (params?.page) queryString.set('page', String(params.page))
+  if (params?.pageSize) queryString.set('pageSize', String(params.pageSize))
 
   return useQuery({
     queryKey: ['companies', params],
     queryFn: () =>
-      get<{ items: Company[]; total?: number }>(
+      get<{ items: Company[]; total?: number; counts?: Record<string, number>; page?: number; pageSize?: number }>(
         `/api/companies?${queryString.toString()}`
       ),
     refetchInterval: 30_000,
+  })
+}
+
+/** 客户池指标条（L0 专属）：总量周新增 / 已触达率 / 转化率① / 待核实 */
+export function useCompanyMetrics() {
+  return useQuery({
+    queryKey: ['company-metrics'],
+    queryFn: () =>
+      get<{
+        total: number
+        weeklyNew: number
+        reached: number
+        reachedRate: number
+        producedLeads: number
+        conversionRate1: number
+        pendingVerify: number
+      }>('/api/companies/metrics'),
+  })
+}
+
+/** 批量操作：认领 / 分配负责人（ADR-0001 决策 2） */
+export function useBatchCompany() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: { action: 'claim' | 'assign'; ids: string[]; ownerId?: string }) =>
+      post<{ updated: number; skipped: number }>('/api/companies/batch', data),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['companies'] })
+      qc.invalidateQueries({ queryKey: ['company'] })
+      qc.invalidateQueries({ queryKey: ['company-metrics'] })
+      toast.success(`批量操作完成：更新 ${res?.updated ?? 0} 家${res?.skipped ? `，跳过 ${res.skipped} 家` : ''}`)
+    },
+    onError: (err) => toast.error((err as Error).message || '批量操作失败'),
+  })
+}
+
+/** 可分配成员列表（批量分配负责人下拉用；仅 TENANT_ADMIN/SUPER_ADMIN/DEPT_HEAD 可调） */
+export function useAssignableUsers(enabled?: boolean) {
+  return useQuery({
+    queryKey: ['assignable-users'],
+    queryFn: () => get<{ items: Array<{ id: string; name: string }> }>('/api/org/users/assignable'),
+    enabled: !!enabled,
+    staleTime: 5 * 60_000,
   })
 }
 
