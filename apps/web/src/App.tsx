@@ -65,7 +65,7 @@ function Layout() {
             <Route path="/confirmations" element={<RequireRole roles={SALES_TEAM}><Confirmations /></RequireRole>} />
             <Route path="/team-ranking" element={<RequireRole roles={MANAGERS}><TeamRanking /></RequireRole>} />
             <Route path="/customers" element={<RequireRole roles={SALES_TEAM}><Customers /></RequireRole>} />
-            <Route path="/contacts" element={<Contacts />} />
+            <Route path="/contacts" element={<RequireRole roles={SALES_TEAM}><Contacts /></RequireRole>} />
             <Route path="/tasks" element={<Tasks />} />
             <Route path="/knowledge-base" element={<KnowledgeBase />} />
             <Route path="/reports" element={<RequireRole roles={SALES_TEAM}><Reports /></RequireRole>} />

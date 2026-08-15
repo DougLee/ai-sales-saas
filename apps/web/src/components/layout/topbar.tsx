@@ -9,8 +9,8 @@ import { USER_ROLES } from '@ai-sales/shared'
 const pageTitles: Record<string, string> = {
   '/': '工作台',
   '/leads': '线索管理',
-  '/projects': '商机管理',
-  '/visits': '拜访记录',
+  '/projects': '商机推进',
+  '/visits': '拜访中心',
   '/confirmations': '待确认',
   '/team-ranking': '团队排名',
   '/customers': '客户管理',
@@ -19,7 +19,6 @@ const pageTitles: Record<string, string> = {
   '/knowledge-base': '知识库',
   '/alerts': 'AI巡检中心',
   '/reports': '数据报表',
-  '/dashboard': '数据看板',
   '/settings': '系统设置',
   '/help': '帮助中心',
 }

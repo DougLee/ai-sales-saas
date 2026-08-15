@@ -1,9 +1,10 @@
-﻿import { Activity, Target, Clock, AlertCircle, Bell, Calendar, AlertTriangle, TrendingDown, MapPinOff, Sparkles } from 'lucide-react'
+﻿import { Trophy, Activity, Target, Clock, AlertCircle, Bell, Calendar, AlertTriangle, TrendingDown, MapPinOff, Sparkles } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 import { LoadingState, ErrorState } from '../components/ui/states.js'
 import { useDashboardStats } from '../hooks/use-dashboard.js'
 import { useAlerts } from '../hooks/use-alerts.js'
 import { useNavigate } from 'react-router-dom'
+import { useHasRole } from '../hooks/use-permission.js'
 import { entityRouteTo } from '../lib/entity-links.js'
 import { sendAiPrompt } from '../lib/ai-prompt.js'
 import type { AlertItem } from '../hooks/use-alerts.js'
@@ -29,6 +30,7 @@ const milestoneColors = [
 ]
 
 export default function Reports() {
+  const isManager = useHasRole('TENANT_ADMIN', 'SUPER_ADMIN', 'DEPT_HEAD')
   const { data, isLoading, error } = useDashboardStats()
   const { data: alertData, isLoading: alertLoading } = useAlerts()
   const navigate = useNavigate()
@@ -51,13 +53,24 @@ export default function Reports() {
           <h1 className="text-xl font-semibold text-text-primary">数据报表</h1>
           <p className="mt-0.5 text-sm text-text-tertiary">销售漏斗与团队绩效分析</p>
         </div>
-        <button
-          onClick={() => sendAiPrompt(reviewPrompts.overall)}
-          className="flex items-center gap-2 rounded-xl bg-primary/10 px-4 py-2 text-sm font-medium text-primary hover:bg-primary/20 transition-colors"
-        >
-          <Sparkles size={16} />
-          AI 整体复盘
-        </button>
+        <div className="flex items-center gap-2">
+          {isManager && (
+            <button
+              onClick={() => navigate('/team-ranking')}
+              className="flex items-center gap-2 rounded-xl border border-border bg-surface px-4 py-2 text-sm font-medium text-text-secondary transition-colors hover:border-primary/40 hover:text-primary"
+              title="团队成员绩效排名（管理者视角）"
+            >
+              <Trophy size={16} /> 团队排名
+            </button>
+          )}
+          <button
+            onClick={() => sendAiPrompt(reviewPrompts.overall)}
+            className="flex items-center gap-2 rounded-xl bg-primary/10 px-4 py-2 text-sm font-medium text-primary hover:bg-primary/20 transition-colors"
+          >
+            <Sparkles size={16} />
+            AI 整体复盘
+          </button>
+        </div>
       </div>
 
       {/* Stats Cards */}
@@ -86,7 +99,7 @@ export default function Reports() {
               {!isLoading && (
                 <button
                   onClick={() => sendAiPrompt(reviewPrompts[s.reviewType])}
-                  className="mt-3 flex items-center gap-1 text-xs font-medium text-primary hover:text-primary-dark transition-colors"
+                  className="mt-3 flex items-center gap-1 text-xs font-medium text-primary hover:text-primary-hover transition-colors"
                 >
                   <Sparkles size={12} />
                   AI 复盘
@@ -115,7 +128,7 @@ export default function Reports() {
               {s.prompt && s.value > 0 && (
                 <button
                   onClick={() => sendAiPrompt(s.prompt)}
-                  className="mt-2 flex items-center gap-1 text-[11px] font-medium text-primary hover:text-primary-dark transition-colors"
+                  className="mt-2 flex items-center gap-1 text-[11px] font-medium text-primary hover:text-primary-hover transition-colors"
                 >
                   <Sparkles size={10} />
                   AI 复盘

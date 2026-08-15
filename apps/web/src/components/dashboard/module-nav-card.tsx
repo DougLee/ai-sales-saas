@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom'
+import { useHasRole } from '../../hooks/use-permission.js'
 import { FileText, Briefcase, UserRound, ClipboardList, ArrowRight } from 'lucide-react'
 
 export interface ModuleNavCardProps {
@@ -53,7 +54,18 @@ const modules = [
 
 export function ModuleNavCard({ leadCount, projectCount, taskCount, visitCount }: ModuleNavCardProps) {
   const navigate = useNavigate()
+  // 审计 #17：四个模块页均为 SALES_TEAM 守卫，VIEWER 只读角色过滤入口（避免钓鱼式点击）
+  const canSales = useHasRole('TENANT_ADMIN', 'SUPER_ADMIN', 'DEPT_HEAD', 'SALES')
   const countMap = { leadCount, projectCount, taskCount, visitCount }
+
+  if (!canSales) {
+    return (
+      <div className="rounded-2xl border border-border bg-surface p-4">
+        <h3 className="mb-2 text-sm font-medium text-text-secondary">作战模块</h3>
+        <p className="text-xs text-text-tertiary">只读账号无作战模块权限，如需操作请联系管理员调整角色。</p>
+      </div>
+    )
+  }
 
   return (
     <div className="rounded-2xl border border-border bg-surface p-4">
