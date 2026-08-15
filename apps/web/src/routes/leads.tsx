@@ -15,6 +15,7 @@ import {
   FileText,
   Search,
   AlertTriangle,
+  Building2,
 } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
@@ -29,6 +30,7 @@ import {
   useLeadLose,
   useLeadTimeline,
   useLeadMetrics,
+  useUpdateLead,
   type Lead,
   type LeadFollowUp,
 } from '../hooks/use-leads.js'
@@ -42,6 +44,7 @@ import Modal from '../components/ui/modal.js'
 import AiEntryButton from '../components/ai/ai-entry-button.js'
 import { EmptyState, LoadingState, ErrorState } from '../components/ui/states.js'
 import { useConfirmDialog } from '../hooks/use-confirm-dialog.js'
+import { ViewTabs, Pagination } from '../components/ui/tabs.js'
 
 const statusLabels: Record<string, string> = {
   NEW: '新建',
@@ -185,6 +188,7 @@ export default function Leads() {
   const del = useDeleteLead()
   const confirmDialog = useConfirmDialog()
   const convert = useConvertLead()
+  const updateLead = useUpdateLead()
   const score = useLeadScore()
   const assess = useLeadAssess()
   const lose = useLeadLose()
@@ -207,8 +211,9 @@ export default function Leads() {
     del.mutate(id)
   }
 
-  const handleConvert = async (lead: Lead, force = false) => {
-    const missing = checkConvertReadiness(lead)
+  const handleConvert = async (lead: Lead, force = false, skipClientCheck = false) => {
+    // 行内按钮（skipClientCheck）直接信任后端 derivation 门禁，避免前后口径打架（审计 #14）
+    const missing = skipClientCheck ? [] : checkConvertReadiness(lead)
     if (missing.length > 0) {
       setConvertBlockReasons(missing)
       setConvertBlockOpen(true)
@@ -278,35 +283,18 @@ export default function Leads() {
         </div>
       </div>
 
-      {/* 页签：状态即视图，可转化绿字突出 */}
-      <div className="flex items-center gap-1 border-b border-border">
-        {([
-          { key: 'following', label: '跟进中', cnt: metrics?.counts.following, hot: false },
-          { key: 'convertible', label: '可转化', cnt: metrics?.counts.convertible, hot: true },
-          { key: 'nurturing', label: '培育中', cnt: metrics?.counts.nurturing, hot: false },
-          { key: 'converted', label: '已转化', cnt: metrics?.counts.converted, hot: false },
-          { key: 'lost', label: '已流失', cnt: metrics?.counts.lost, hot: false },
-        ] as const).map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setStatusFilter(t.key)}
-            className={`-mb-px border-b-2 px-3.5 py-2 text-sm transition-colors ${
-              tab === t.key
-                ? 'border-primary font-medium text-primary'
-                : 'border-transparent text-text-secondary hover:text-text-primary'
-            }`}
-          >
-            {t.label}
-            <span className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[11px] ${
-              t.hot && (t.cnt ?? 0) > 0
-                ? 'bg-success/15 font-bold text-success'
-                : tab === t.key ? 'bg-primary/10 text-primary' : 'bg-surface-elevated text-text-tertiary'
-            }`}>
-              {t.cnt ?? '-'}
-            </span>
-          </button>
-        ))}
-      </div>
+      {/* 页签：状态即视图，可转化绿字突出（ViewTabs 统一组件） */}
+      <ViewTabs
+        tabs={[
+          { key: 'following', label: '跟进中', count: metrics?.counts.following },
+          { key: 'convertible', label: '可转化', count: metrics?.counts.convertible, hot: true },
+          { key: 'nurturing', label: '培育中', count: metrics?.counts.nurturing },
+          { key: 'converted', label: '已转化', count: metrics?.counts.converted },
+          { key: 'lost', label: '已流失', count: metrics?.counts.lost },
+        ]}
+        value={tab}
+        onChange={setStatusFilter}
+      />
 
       {/* 指标条（L1 专属） */}
       {metrics && (
@@ -319,7 +307,7 @@ export default function Leads() {
             <p className="mt-0.5 text-xs text-text-secondary">跟进中线索</p>
           </div>
           <div className="rounded-xl border border-border bg-surface p-3.5">
-            <p className="text-xl font-bold text-[#d97706]">{metrics.gradeA}</p>
+            <p className="text-xl font-bold text-warning">{metrics.gradeA}</p>
             <p className="mt-0.5 text-xs text-text-secondary">A 级（本周必跟）</p>
           </div>
           <div className="rounded-xl border border-border bg-surface p-3.5">
@@ -355,8 +343,8 @@ export default function Leads() {
             onClick={() => setGradeFilter(gradeFilter === g ? '' : g)}
             className={`rounded-full border px-3 py-1 text-xs transition-colors ${
               gradeFilter === g
-                ? g === 'A' ? 'border-[#f59e0b] bg-[#fef3c7] font-bold text-[#92400e]'
-                  : g === 'B' ? 'border-[#3b82f6] bg-[#dbeafe] font-bold text-[#1d4ed8]'
+                ? g === 'A' ? 'border-warning bg-warning/15 font-bold text-warning'
+                  : g === 'B' ? 'border-primary bg-primary/10 font-bold text-primary'
                   : 'border-border bg-surface-elevated font-bold text-text-secondary'
                 : 'border-border bg-surface text-text-tertiary hover:text-text-secondary'
             }`}
@@ -413,13 +401,13 @@ export default function Leads() {
                     </td>
                     <td className="px-3 py-2.5">
                       <span className={`text-base font-extrabold ${
-                        lead.grade === 'A' ? 'text-[#d97706]' : lead.grade === 'B' ? 'text-primary' : 'text-text-tertiary'
+                        lead.grade === 'A' ? 'text-warning' : lead.grade === 'B' ? 'text-primary' : 'text-text-tertiary'
                       }`}>
                         {lead.score ?? '-'}
                       </span>
                       {lead.grade && (
-                        <span className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
-                          lead.grade === 'A' ? 'bg-[#fef3c7] text-[#92400e]' : lead.grade === 'B' ? 'bg-[#dbeafe] text-[#1d4ed8]' : 'bg-surface-elevated text-text-tertiary'
+                        <span className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[11px] font-semibold ${
+                          lead.grade === 'A' ? 'bg-warning/15 text-warning' : lead.grade === 'B' ? 'bg-primary/10 text-primary' : 'bg-surface-elevated text-text-tertiary'
                         }`}>{lead.grade}</span>
                       )}
                     </td>
@@ -433,7 +421,7 @@ export default function Leads() {
                         ] as const).map(([label, st]) => (
                           <i
                             key={label}
-                            className={`flex h-4 w-4 items-center justify-center rounded text-[9px] font-bold ${
+                            className={`flex h-4 w-4 items-center justify-center rounded text-[11px] font-bold ${
                               st === 'ready' ? 'bg-success text-white'
                               : st === 'partial' ? 'bg-warning/80 text-white'
                               : 'bg-border text-text-tertiary'
@@ -499,19 +487,35 @@ export default function Leads() {
                       <div className="flex items-center justify-end gap-2 whitespace-nowrap">
                         {ready && lead.status === 'FOLLOWING' ? (
                           <button
-                            onClick={() => handleConvert(lead)}
+                            onClick={() => handleConvert(lead, false, true)}
                             disabled={convert.isPending}
                             className="rounded-md bg-success px-2 py-0.5 text-xs font-semibold text-white transition-colors hover:bg-success/90 disabled:opacity-50"
                           >
                             转商机
                           </button>
                         ) : lead.status === 'FOLLOWING' ? (
-                          <button
-                            onClick={() => { setDetailId(lead.id); setFollowUpOpen(true) }}
-                            className="text-xs text-primary hover:underline"
-                          >
-                            跟进
-                          </button>
+                          <>
+                            <button
+                              onClick={() => { setDetailId(lead.id); setFollowUpOpen(true) }}
+                              className="text-xs text-primary hover:underline"
+                            >
+                              跟进
+                            </button>
+                            {d && d.gate.passed < d.gate.total && (
+                              <button
+                                onClick={() => {
+                                  setConvertBlockReasons(checkConvertReadiness(lead))
+                                  setConvertBlockOpen(true)
+                                }}
+                                className="rounded-md border border-warning/50 px-1.5 py-0.5 text-[11px] text-warning transition-colors hover:bg-warning/10"
+                                title={`转化还差 ${d.gate.total - d.gate.passed} 项，点击查看缺口清单`}
+                              >
+                                差 {d.gate.total - d.gate.passed} 项
+                              </button>
+                            )}
+                          </>
+                        ) : lead.status === 'CONVERTED' ? (
+                          <span className="text-[11px] text-text-tertiary">已转化</span>
                         ) : null}
                         <AiEntryButton
                           prompt={`请帮我评估这条线索：${lead.name}，联系人 ${lead.contactName || '暂无'}，当前评分 ${lead.score ?? '未评'}`}
@@ -554,28 +558,14 @@ export default function Leads() {
           />
         )}
 
-        {/* 分页 */}
+        {/* 分页（Pagination 统一组件） */}
         {!isLoading && (data?.total ?? 0) > 0 && (
-          <div className="flex items-center gap-3 border-t border-border px-4 py-2.5 text-xs text-text-secondary">
-            <span>共 {data?.total ?? 0} 条</span>
-            <div className="ml-auto flex items-center gap-1">
-              <button
-                onClick={() => setPage((p) => Math.max(p - 1, 1))}
-                disabled={page <= 1}
-                className="rounded-md border border-border bg-surface px-2 py-0.5 transition-colors hover:border-primary/40 hover:text-primary disabled:opacity-40"
-              >
-                ‹
-              </button>
-              <span className="px-1">{page} / {Math.max(Math.ceil((data?.total ?? 0) / 20), 1)}</span>
-              <button
-                onClick={() => setPage((p) => p + 1)}
-                disabled={page >= Math.ceil((data?.total ?? 0) / 20)}
-                className="rounded-md border border-border bg-surface px-2 py-0.5 transition-colors hover:border-primary/40 hover:text-primary disabled:opacity-40"
-              >
-                ›
-              </button>
-            </div>
-          </div>
+          <Pagination
+            page={page}
+            totalPages={Math.max(Math.ceil((data?.total ?? 0) / 20), 1)}
+            onChange={setPage}
+            totalLabel={`共 ${data?.total ?? 0} 条`}
+          />
         )}
       </div>
       <LeadForm open={open} onClose={handleClose} initialData={editingItem} />
@@ -586,8 +576,16 @@ export default function Leads() {
           <div className="space-y-5">
             <div className="flex items-start justify-between">
               <div>
-                <label className="text-xs text-text-tertiary">客户名称</label>
+                <label className="text-xs text-text-tertiary">线索名称</label>
                 <p className="text-base font-medium text-text-primary">{detailItem.name}</p>
+                {detailItem.company?.name && detailItem.company?.id && (
+                  <button
+                    onClick={() => navigate(`/customers?id=${detailItem.company!.id}`)}
+                    className="mt-0.5 flex items-center gap-1 text-xs text-primary hover:underline"
+                  >
+                    <Building2 size={11} /> {detailItem.company.name}（所属客户）
+                  </button>
+                )}
               </div>
               <div className="flex gap-2">
                 {detailItem.grade && (
@@ -699,6 +697,23 @@ export default function Leads() {
               <label className="text-xs text-text-tertiary">备注</label>
               <p className="text-sm text-text-primary whitespace-pre-wrap">{detailItem.notes || '-'}</p>
             </div>
+
+            {(detailItem.status === 'NEW' || detailItem.status === 'PAUSED' || detailItem.status === 'LOST') && (
+              <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
+                <p className="text-sm text-text-secondary">
+                  {detailItem.status === 'LOST' ? '该线索已流失。' : '该线索在培育轨道中（未进入跟进）。'}
+                  {detailItem.status !== 'LOST' && ' 开始跟进后将进入转化门禁轨道。'}
+                </p>
+                <button
+                  onClick={() => updateLead.mutate({ id: detailItem.id, data: { status: 'FOLLOWING' } })}
+                  disabled={updateLead.isPending}
+                  className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
+                >
+                  <RefreshCw size={14} className={updateLead.isPending ? 'animate-spin' : ''} />
+                  {updateLead.isPending ? '激活中...' : detailItem.status === 'LOST' ? '重新打开（恢复跟进）' : '开始跟进（激活）'}
+                </button>
+              </div>
+            )}
 
             {detailItem.status === 'FOLLOWING' && (
               <>

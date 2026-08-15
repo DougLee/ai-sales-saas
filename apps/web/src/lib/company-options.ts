@@ -33,9 +33,9 @@ export const SOURCE_OPTIONS = [
 ] as const
 
 export const LEVEL_OPTIONS = [
-  { value: 'A', label: 'A - 战略客户', dot: 'bg-[#f59e0b]' },
-  { value: 'B', label: 'B - 重点客户', dot: 'bg-[#3b82f6]' },
-  { value: 'C', label: 'C - 普通客户', dot: 'bg-[#94a3b8]' },
+  { value: 'A', label: 'A - 战略客户', dot: 'bg-warning' },
+  { value: 'B', label: 'B - 重点客户', dot: 'bg-primary' },
+  { value: 'C', label: 'C - 普通客户', dot: 'bg-text-tertiary/40' },
   { value: 'D', label: 'D - 潜在客户', dot: 'bg-text-tertiary/40' },
 ] as const
 

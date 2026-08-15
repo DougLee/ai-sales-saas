@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { KeyRound, Map as MapIcon } from 'lucide-react'
+import { KeyRound, Map as MapIcon, Check, Circle } from 'lucide-react'
 import { useCreateLead, useUpdateLead, type Lead } from '../../hooks/use-leads.js'
 import { isValidPhone, isValidEmail } from '@ai-sales/shared'
 import { toast } from '../../lib/toast.js'
@@ -301,7 +301,7 @@ export default function LeadForm({ open, onClose, initialData, prefilledCompanyI
 
             {/* 人 */}
             <section className="overflow-hidden rounded-xl border border-border">
-              <div className={secHead('bg-[#fef3c7] text-[#b45309]')}>
+              <div className={secHead('bg-warning/15 text-[#b45309]')}>
                 <span className={`${secBadge} bg-[#b45309]`}>人</span>关键对接人
                 <span className="text-xs font-normal opacity-80">— 现在搭上线的是谁？</span>
                 <span className={secPts}>{breakdown.contactCompleteness + breakdown.decisionChainClarity} / 45 分</span>
@@ -335,8 +335,8 @@ export default function LeadForm({ open, onClose, initialData, prefilledCompanyI
 
             {/* 事 */}
             <section className="overflow-hidden rounded-xl border border-border">
-              <div className={secHead('bg-[#dbeafe] text-[#1d4ed8]')}>
-                <span className={`${secBadge} bg-[#1d4ed8]`}>事</span>需求信号
+              <div className={secHead('bg-primary/10 text-primary')}>
+                <span className={`${secBadge} bg-primary`}>事</span>需求信号
                 <span className="text-xs font-normal opacity-80">— 什么事让你觉得这有戏？</span>
                 <span className={secPts}>{breakdown.needClarity} / 30 分</span>
               </div>
@@ -365,8 +365,8 @@ export default function LeadForm({ open, onClose, initialData, prefilledCompanyI
 
             {/* 财 */}
             <section className="overflow-hidden rounded-xl border border-border">
-              <div className={secHead('bg-[#dcfce7] text-[#15803d]')}>
-                <span className={`${secBadge} bg-[#15803d]`}>财</span>预算信号
+              <div className={secHead('bg-success/10 text-success')}>
+                <span className={`${secBadge} bg-success`}>财</span>预算信号
                 <span className="text-xs font-normal opacity-80">— 钱的事，有苗头吗？（初期多半未知，不急）</span>
                 <span className={secPts}>{breakdown.budgetSignal} / 25 分</span>
               </div>
@@ -389,8 +389,8 @@ export default function LeadForm({ open, onClose, initialData, prefilledCompanyI
           <aside className="space-y-3 rounded-xl border border-border bg-surface-elevated/40 p-3.5">
             <div>
               <div className="flex items-baseline gap-2">
-                <span className={`text-4xl font-extrabold ${breakdown.total >= 60 ? 'text-[#d97706]' : breakdown.total >= 40 ? 'text-primary' : 'text-text-tertiary'}`}>{breakdown.total}</span>
-                <span className="rounded-full bg-[#dbeafe] px-2 py-0.5 text-xs font-bold text-[#1d4ed8]">{breakdown.grade} 级 · 预估</span>
+                <span className={`text-4xl font-extrabold ${breakdown.total >= 60 ? 'text-warning' : breakdown.total >= 40 ? 'text-primary' : 'text-text-tertiary'}`}>{breakdown.total}</span>
+                <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-bold text-primary">{breakdown.grade} 级 · 预估</span>
               </div>
               <p className="mt-0.5 text-[11px] text-text-tertiary">线索质量分（随填写实时更新，保存后自动落库）</p>
             </div>
@@ -420,13 +420,13 @@ export default function LeadForm({ open, onClose, initialData, prefilledCompanyI
             )}
 
             <div className="rounded-lg border border-border bg-surface px-3 py-2">
-              <p className="text-xs font-bold text-text-primary">转化门禁进度 <span className="rounded-md bg-[#f5f3ff] px-1.5 text-[10px] font-medium text-[#6d28d9]">5 条硬条件</span></p>
+              <p className="text-xs font-bold text-text-primary">转化门禁进度 <span className="rounded-md bg-violet-50 px-1.5 text-[11px] font-medium text-violet-700">5 条硬条件</span></p>
               <ul className="mt-1.5 space-y-1 text-xs leading-5 text-text-secondary">
-                <li>{(contactPhone || contactEmail) && isValidPhone(contactPhone) ? '✅' : '⬜'} 有效联系方式</li>
-                <li>{requirements.trim() ? '✅' : '⬜'} 需求方向明确</li>
-                <li>{breakdown.total >= 60 ? '✅' : '⬜'} 评分 ≥ 60（当前 {breakdown.total}）</li>
-                <li>⬜ 至少一次有效跟进（建档后跟进即计）</li>
-                <li>{decisionMaker.trim() ? '✅' : '⬜'} 识别决策链关键角色</li>
+                <li className="flex items-center gap-1">{(contactPhone ? isValidPhone(contactPhone) : !!contactEmail) ? <Check size={11} className="text-success" /> : <Circle size={11} className="text-text-tertiary" />} 有效联系方式</li>
+                <li className="flex items-center gap-1">{requirements.trim() ? <Check size={11} className="text-success" /> : <Circle size={11} className="text-text-tertiary" />} 需求方向明确</li>
+                <li className="flex items-center gap-1">{breakdown.total >= 60 ? <Check size={11} className="text-success" /> : <Circle size={11} className="text-text-tertiary" />} 评分 ≥ 60（当前 {breakdown.total}）</li>
+                <li className="flex items-center gap-1"><Circle size={11} className="text-text-tertiary" /> 至少一次有效跟进（建档后跟进即计）</li>
+                <li className="flex items-center gap-1">{decisionMaker.trim() ? <Check size={11} className="text-success" /> : <Circle size={11} className="text-text-tertiary" />} 识别决策链关键角色</li>
               </ul>
               {readiness.softHints.length > 0 && (
                 <p className="mt-1.5 border-t border-border pt-1.5 text-[11px] text-warning">软提示：{readiness.softHints[0]}</p>

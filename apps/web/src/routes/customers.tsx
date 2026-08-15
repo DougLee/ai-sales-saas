@@ -15,6 +15,7 @@ import AiEntryButton from '../components/ai/ai-entry-button.js'
 import { EmptyState, LoadingState, ErrorState } from '../components/ui/states.js'
 import { useConfirmDialog } from '../hooks/use-confirm-dialog.js'
 import { TimelineView } from '../components/timeline/timeline-view.js'
+import { ViewTabs, Pagination } from '../components/ui/tabs.js'
 
 const industryLabels: Record<string, string> = {
   education: '教育',
@@ -76,6 +77,7 @@ const VIEW_TABS = [
   { key: 'target', label: '目标客户' },
   { key: 'following', label: '跟进中' },
   { key: 'won', label: '已成交' },
+  { key: 'lost', label: '已流失' },
   { key: 'open', label: '公海池' },
   { key: 'all', label: '全部客户' },
 ] as const
@@ -124,14 +126,19 @@ export default function Customers() {
   const { data: changeHistory } = useCompanyChangeHistory(detailId)
 
   const companyId = searchParams.get('id')
+  // 深链直接打开详情（审计 #15：详情走独立查询，无需列表命中）
   useEffect(() => {
-    if (!companyId || !data) return
-    const company = data.items.find((c) => c.id === companyId)
-    if (company) {
-      setDetailId(company.id)
-      setSearchParams({}, { replace: true })
-    }
-  }, [companyId, data, setSearchParams])
+    if (!companyId) return
+    setDetailId(companyId)
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        next.delete('id')
+        return next
+      },
+      { replace: true },
+    )
+  }, [companyId, setSearchParams])
   const del = useDeleteCompany()
   const confirmDialog = useConfirmDialog()
   const claim = useClaimCompany()
@@ -144,21 +151,21 @@ export default function Customers() {
   )
   const navigate = useNavigate()
 
-  // URL ?status= 同步页签（侧栏「目标客户」入口等仍用此参数）
+  // URL ?status= 同步页签；无参数时保持当前页签（审计 #15：原「无参数则重置」会回跳）
   useEffect(() => {
     const status = searchParams.get('status')
     if (status && VIEW_TABS.some((t) => t.key === status)) {
       setTab(status)
-    } else if (!status) {
-      setTab('target')
     }
   }, [searchParams])
 
-  // 筛选/页签变化时回到第一页，并清空勾选
+  // 筛选/页签变化回第一页；翻页/筛选变化清空勾选（审计 #15：跨页累积与全选替换语义冲突）
   useEffect(() => {
     setPage(1)
-    setSelectedIds(new Set())
   }, [debouncedSearch, tab, fIndustry, fLevel, fRegion, fSource, fOwnerId, pageSize])
+  useEffect(() => {
+    setSelectedIds(new Set())
+  }, [debouncedSearch, tab, fIndustry, fLevel, fRegion, fSource, fOwnerId, pageSize, page])
 
   const companies = data?.items || []
   const totalCount = data?.total ?? companies.length
@@ -286,32 +293,23 @@ export default function Customers() {
         </div>
       </div>
 
-      {/* 视图页签：状态即视图，计数挂页签上 */}
-      <div className="flex items-center gap-1 border-b border-border">
-        {VIEW_TABS.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => {
-              setTab(t.key)
-              if (t.key === 'target') {
-                setSearchParams({}, { replace: true })
-              }
-            }}
-            className={`-mb-px border-b-2 px-3.5 py-2 text-sm transition-colors ${
-              tab === t.key
-                ? 'border-primary font-medium text-primary'
-                : 'border-transparent text-text-secondary hover:text-text-primary'
-            }`}
-          >
-            {t.label}
-            <span className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[11px] ${
-              tab === t.key ? 'bg-primary/10 text-primary' : 'bg-surface-elevated text-text-tertiary'
-            }`}>
-              {t.key === 'open' ? (counts.open ?? '-') : (counts[t.key] ?? '-')}
-            </span>
-          </button>
-        ))}
-      </div>
+      {/* 视图页签：状态即视图，计数挂页签上（ViewTabs 统一组件） */}
+      <ViewTabs
+        tabs={VIEW_TABS.map((t) => ({ ...t, count: t.key === 'open' ? (counts.open ?? '-') : (counts[t.key] ?? '-') })) as never}
+        value={tab}
+        onChange={(key) => {
+          setTab(key)
+          setSearchParams(
+            (prev) => {
+              const next = new URLSearchParams(prev)
+              if (key === 'target') next.delete('status')
+              else next.set('status', key)
+              return next
+            },
+            { replace: true },
+          )
+        }}
+      />
 
       {/* 指标条（L0 专属）：漏斗过程指标直接顶在页面上 */}
       {tab === 'target' && metrics && (
@@ -370,7 +368,7 @@ export default function Customers() {
         </select>
         <select value={fRegion} onChange={(e) => setFRegion(e.target.value)} className="h-9 rounded-lg border border-border bg-surface px-2 text-xs text-text-secondary outline-none focus:border-primary cursor-pointer" title="地区">
           <option value="">地区：全部</option>
-          {[...new Set(companies.map((c) => c.region).filter(Boolean))].map((r) => (
+          {[...new Set([fRegion, ...companies.map((c) => c.region).filter(Boolean)].filter(Boolean))].map((r) => (
             <option key={r} value={r}>{r}</option>
           ))}
         </select>
@@ -382,7 +380,7 @@ export default function Customers() {
           <option value="">负责人：全部</option>
           <option value="none">未分配</option>
           {[...new Map(companies.filter((c) => c.owner).map((c) => [c.owner!.id, c.owner!.name] as const)).entries()].map(([id, name]) => (
-            <option key={id} value={id}>{name}</option>
+            <option key={id} value={id}>{fOwnerId === id ? `${name}（当前筛选）` : name}</option>
           ))}
         </select>
         {(fIndustry || fLevel || fRegion || fSource || fOwnerId) && (
@@ -413,10 +411,6 @@ export default function Customers() {
               </button>
             </span>
           )}
-          <span className="flex items-center gap-3 text-text-tertiary">
-            <span className="cursor-not-allowed opacity-50" title="后续版本支持">批量导出</span>
-            <span className="cursor-not-allowed opacity-50" title="后续版本支持">移入公海</span>
-          </span>
           <button onClick={() => setSelectedIds(new Set())} className="ml-auto text-text-secondary hover:underline">
             取消选择
           </button>
@@ -472,7 +466,7 @@ export default function Customers() {
                         {company.name}
                       </button>
                       {company.source === 'ai_recommendation' && (
-                        <span className="ml-1.5 inline-flex items-center gap-0.5 rounded-md border border-[#ddd6fe] bg-[#f5f3ff] px-1 text-[10px] font-medium text-[#7c3aed]" title="小销 AI 建档，待核实">
+                        <span className="ml-1.5 inline-flex items-center gap-0.5 rounded-md border border-violet-200 bg-violet-50 px-1 text-[11px] font-medium text-violet-600" title="小销 AI 建档，待核实">
                           <Bot size={9} /> 小销
                         </span>
                       )}
@@ -585,50 +579,16 @@ export default function Customers() {
           />
         )}
 
-        {/* 分页 */}
+        {/* 分页（Pagination 统一组件） */}
         {!isLoading && totalCount > 0 && (
-          <div className="flex items-center gap-3 border-t border-border px-4 py-2.5 text-xs text-text-secondary">
-            <span>共 {totalCount} 家 · 每页</span>
-            <select
-              value={pageSize}
-              onChange={(e) => setPageSize(Number(e.target.value))}
-              className="h-7 rounded-md border border-border bg-surface px-1 text-xs outline-none focus:border-primary cursor-pointer"
-            >
-              <option value={20}>20</option>
-              <option value={50}>50</option>
-            </select>
-            <span>条</span>
-            <div className="ml-auto flex items-center gap-1">
-              <button
-                onClick={() => setPage((p) => Math.max(p - 1, 1))}
-                disabled={page <= 1}
-                className="rounded-md border border-border bg-surface px-2 py-0.5 transition-colors hover:border-primary/40 hover:text-primary disabled:opacity-40"
-              >
-                ‹
-              </button>
-              {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
-                const start = Math.max(Math.min(page - 2, totalPages - 4), 1)
-                return start + i
-              }).filter((p) => p <= totalPages).map((p) => (
-                <button
-                  key={p}
-                  onClick={() => setPage(p)}
-                  className={`rounded-md border px-2 py-0.5 transition-colors ${
-                    p === page ? 'border-primary bg-primary text-white' : 'border-border bg-surface hover:border-primary/40 hover:text-primary'
-                  }`}
-                >
-                  {p}
-                </button>
-              ))}
-              <button
-                onClick={() => setPage((p) => Math.min(p + 1, totalPages))}
-                disabled={page >= totalPages}
-                className="rounded-md border border-border bg-surface px-2 py-0.5 transition-colors hover:border-primary/40 hover:text-primary disabled:opacity-40"
-              >
-                ›
-              </button>
-            </div>
-          </div>
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            onChange={setPage}
+            totalLabel={`共 ${totalCount} 家`}
+            pageSize={pageSize}
+            onPageSizeChange={setPageSize}
+          />
         )}
       </div>
 
@@ -655,7 +615,7 @@ export default function Customers() {
                     </span>
                   )}
                   {detailData._readonly && (
-                    <span className="rounded-full bg-text-tertiary/10 px-2 py-0.5 text-[10px] text-text-tertiary">
+                    <span className="rounded-full bg-text-tertiary/10 px-2 py-0.5 text-[11px] text-text-tertiary">
                       由 {detailData.company.owner?.name || '其他同事'} 负责
                     </span>
                   )}
@@ -957,12 +917,15 @@ export default function Customers() {
                   <div
                     key={p.id}
                     className="flex items-center justify-between rounded-lg bg-surface px-3 py-2 cursor-pointer hover:bg-surface-elevated/50 transition-colors"
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => e.key === 'Enter' && navigate(entityRouteTo('project', p.id))}
                     onClick={() => navigate(entityRouteTo('project', p.id))}
                   >
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium text-text-primary">{p.name}</span>
-                        <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                        <span className={`rounded-full px-1.5 py-0.5 text-[11px] font-medium ${
                           p.urgency === 'CRITICAL' ? 'bg-danger/10 text-danger' :
                           p.urgency === 'HIGH' ? 'bg-warning/10 text-warning' :
                           p.urgency === 'MEDIUM' ? 'bg-primary/10 text-primary' :
@@ -978,7 +941,7 @@ export default function Customers() {
                       </div>
                     </div>
                     {p.closedAt ? (
-                      <span className="shrink-0 text-[10px] text-text-tertiary">已关闭</span>
+                      <span className="shrink-0 text-[11px] text-text-tertiary">已关闭</span>
                     ) : (
                       <ArrowRight size={14} className="shrink-0 text-text-tertiary" />
                     )}
@@ -992,6 +955,13 @@ export default function Customers() {
               <div className="mb-3 flex items-center justify-between">
                 <h4 className="flex items-center gap-1.5 text-sm font-medium text-text-secondary">
                   <Users size={14} /> 关联联系人 ({detailData.contacts.length})
+                  <button
+                    onClick={() => navigate('/contacts')}
+                    className="ml-auto text-xs font-normal text-primary hover:underline"
+                    title="联系人管理"
+                  >
+                    全部联系人 →
+                  </button>
                 </h4>
               </div>
               {detailData.contacts.length === 0 && (
@@ -1002,6 +972,9 @@ export default function Customers() {
                   <div
                     key={c.id}
                     className="flex items-center gap-3 rounded-lg bg-surface px-3 py-2 cursor-pointer hover:bg-surface-elevated/50 transition-colors"
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => e.key === 'Enter' && navigate(entityRouteTo('contact', c.id))}
                     onClick={() => navigate(entityRouteTo('contact', c.id))}
                   >
                     <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary">
@@ -1011,7 +984,7 @@ export default function Customers() {
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium text-text-primary">{c.name}</span>
                         {c.decisionRole && (
-                          <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">{decisionRoleLabels[c.decisionRole] || c.decisionRole}</span>
+                          <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[11px] text-primary">{decisionRoleLabels[c.decisionRole] || c.decisionRole}</span>
                         )}
                       </div>
                       <div className="flex items-center gap-2 text-xs text-text-tertiary">
@@ -1045,9 +1018,12 @@ export default function Customers() {
                   <div
                     key={v.id}
                     className="flex items-center gap-3 rounded-lg bg-surface px-3 py-2 cursor-pointer hover:bg-surface-elevated/50 transition-colors"
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => e.key === 'Enter' && setVisitDetailId(v.id)}
                     onClick={() => setVisitDetailId(v.id)}
                   >
-                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${
                       v.visitType === 'offline' ? 'bg-primary/10 text-primary' :
                       v.visitType === 'online' ? 'bg-success/10 text-success' :
                       'bg-warning/10 text-warning'
@@ -1089,7 +1065,7 @@ export default function Customers() {
                         {t.project?.name ? ` · ${t.project.name}` : ''}
                       </p>
                     </div>
-                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${
                       t.priority === 'URGENT' ? 'bg-danger/10 text-danger' :
                       t.priority === 'HIGH' ? 'bg-warning/10 text-warning' :
                       t.priority === 'MEDIUM' ? 'bg-primary/10 text-primary' :

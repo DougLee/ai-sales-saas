@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Plus, Loader2, Pencil, Trash2, ChevronRight, Calendar, Flag, CheckCircle2, AlertTriangle, Building2, Briefcase, Magnet, Search } from 'lucide-react'
+import { Plus, Loader2, Pencil, Trash2, ChevronRight, Calendar, Flag, CheckCircle2, AlertTriangle, Building2, Briefcase, Magnet, Search, ArrowUpRight, Check, Dot, Circle } from 'lucide-react'
 import { useProjects, useProject, useDeleteProject, useUpdateProject, useProjectMetrics, WAITING_STATUSES, type Project, type WaitingStatus } from '../hooks/use-projects.js'
 import { useDecisionChain, useUpdateDecisionChain } from '../hooks/use-decision-chain.js'
 import { DecisionChainMap } from '../components/projects/decision-chain-map.js'
@@ -8,6 +8,8 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { useQueryClient } from '@tanstack/react-query'
 import { entityRouteTo } from '../lib/entity-links.js'
+import { invalidateVisitRelated } from '../lib/invalidation.js'
+import { Pagination } from '../components/ui/tabs.js'
 import { useDebouncedValue } from '../hooks/use-debounced-value.js'
 import AiEntryButton from '../components/ai/ai-entry-button.js'
 import ProjectForm from '../components/forms/project-form.js'
@@ -186,28 +188,48 @@ function checkGateCompletion(project: Project): { completed: boolean; missing: s
 }
 
 export default function Projects() {
-  const [tab, setTab] = useState('全部')
-  const [viewMode, setViewMode] = useState<'list' | 'board' | 'funnel'>('board')
-  const [collapsed, setCollapsed] = useState(false) // 决策⑧：9 列横滚 / 三阶段折叠切换
-  const [search, setSearch] = useState('')
+  // 视图/筛选状态入 URL（审计 #18：刷新/分享不丢，对齐 leads 页标准）
+  const [searchParams, setSearchParams] = useSearchParams()
+  const setParam = (key: string, value: string) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev)
+      if (value) next.set(key, value)
+      else next.delete(key)
+      return next
+    }, { replace: true })
+  }
+  const tab = searchParams.get('tab') || '全部'
+  const setTab = (v: string) => setParam('tab', v === '全部' ? '' : v)
+  const viewMode = (searchParams.get('view') as 'list' | 'board' | 'funnel') || 'board'
+  const setViewMode = (v: 'list' | 'board' | 'funnel') => setParam('view', v === 'board' ? '' : v)
+  const collapsed = searchParams.get('collapsed') === '1'
+  const setCollapsed = (v: boolean) => setParam('collapsed', v ? '1' : '')
+  const healthFilter = searchParams.get('health') || ''
+  const setHealthFilter = (v: string) => setParam('health', v)
+  const onlyStale = searchParams.get('stale') === '1'
+  const setOnlyStale = (v: boolean) => setParam('stale', v ? '1' : '')
+  const onlyWaiting = searchParams.get('waiting') === '1'
+  const setOnlyWaiting = (v: boolean) => setParam('waiting', v ? '1' : '')
+  const onlyIllusion = searchParams.get('illusion') === '1'
+  const setOnlyIllusion = (v: boolean) => setParam('illusion', v ? '1' : '')
+  const [search, setSearch] = useState(searchParams.get('q') || '')
   const debouncedSearch = useDebouncedValue(search)
-  const [healthFilter, setHealthFilter] = useState('')
-  const [onlyStale, setOnlyStale] = useState(false)
-  const [onlyWaiting, setOnlyWaiting] = useState(false)
-  const [onlyIllusion, setOnlyIllusion] = useState(false)
   const [open, setOpen] = useState(false)
   const [editingItem, setEditingItem] = useState<Partial<Project> | undefined>(undefined)
   const [detailId, setDetailId] = useState<string | undefined>(undefined)
   const [visitFormOpen, setVisitFormOpen] = useState(false)
   const [visitDetailId, setVisitDetailId] = useState<string | undefined>(undefined)
-  const { data, isLoading, error } = useProjects({ search: debouncedSearch || undefined })
+  const [page, setPage] = useState(1)
+  const { data, isLoading, error } = useProjects({ search: debouncedSearch || undefined, page, pageSize: 50 })
   const { data: metrics } = useProjectMetrics()
+
+  // 筛选变化回第一页
+  useEffect(() => { setPage(1) }, [tab, healthFilter, onlyStale, onlyWaiting, onlyIllusion, debouncedSearch])
   const del = useDeleteProject()
   const update = useUpdateProject()
   const confirmDialog = useConfirmDialog()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const [searchParams, setSearchParams] = useSearchParams()
 
   // P0：详情不再用列表快照，走独立查询，操作后随 ['project', id] 失效自动刷新
   const { data: detailItem } = useProject(detailId)
@@ -403,13 +425,15 @@ export default function Projects() {
 
       <div className="rounded-2xl border border-border bg-surface">
         <div className="flex items-center justify-between border-b border-border px-6 py-4">
-          <div className="flex items-center gap-6">
-            {['全部', '跟进中', '已签约', '已流失'].map((t) => (
+          <div className="flex items-center gap-1">
+            {(['全部', '跟进中', '已签约', '已流失'] as const).map((t) => (
               <button
                 key={t}
+                role="tab"
+                aria-selected={tab === t}
                 onClick={() => setTab(t)}
-                className={`text-sm font-medium ${
-                  tab === t ? 'text-primary' : 'text-text-secondary hover:text-text-primary'
+                className={`rounded-lg px-3 py-1.5 text-sm transition-colors ${
+                  tab === t ? 'bg-primary/10 font-medium text-primary' : 'text-text-secondary hover:bg-surface-elevated hover:text-text-primary'
                 }`}
               >
                 {t}
@@ -418,7 +442,7 @@ export default function Projects() {
           </div>
           {viewMode === 'board' && (
             <button
-              onClick={() => setCollapsed((v) => !v)}
+              onClick={() => setCollapsed(!collapsed)}
               className="rounded-lg border border-border px-2.5 py-1 text-xs text-text-secondary transition-colors hover:border-primary/40 hover:text-primary"
               title="9 列横滚 / 三阶段折叠切换（决策⑧）"
             >
@@ -456,19 +480,28 @@ export default function Projects() {
           />
         )}
 
-        {!isLoading && !error && filteredItems.length > 0 && viewMode === 'funnel' && (
-          <ProjectFunnel projects={filteredItems} />
+        {!isLoading && !error && (data?.items.length ?? 0) > 0 && viewMode === 'funnel' && (
+          <ProjectFunnel projects={data?.items || []} />
+        )}
+
+        {!isLoading && (data?.total ?? 0) > 0 && (data?.items.length ?? 0) > 0 && (
+          <Pagination
+            page={page}
+            totalPages={Math.max(Math.ceil((data?.total ?? 0) / 50), 1)}
+            onChange={setPage}
+            totalLabel={`共 ${data?.total ?? 0} 条商机`}
+          />
         )}
 
         {!isLoading && !error && filteredItems.length > 0 && viewMode === 'list' && (
           <div className="divide-y divide-border">
             {filteredItems.map((project) => (
-              <div key={project.id} className="flex items-center justify-between px-6 py-4 hover:bg-surface-elevated/50 transition-colors cursor-pointer" onClick={() => setDetailId(project.id)}>
+              <div key={project.id} role="button" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && setDetailId(project.id)} className="flex items-center justify-between px-6 py-4 hover:bg-surface-elevated/50 transition-colors cursor-pointer" onClick={() => setDetailId(project.id)}>
                 <div>
                   <p className="font-medium text-text-primary">
                     {project.name}
                     {project.derivation?.illusion && (
-                      <span className="ml-1.5 rounded-md border border-danger/40 bg-danger/5 px-1 text-[10px] font-medium text-danger">疑似幻觉</span>
+                      <span className="ml-1.5 rounded-md border border-danger/40 bg-danger/5 px-1 text-[11px] font-medium text-danger">疑似幻觉</span>
                     )}
                   </p>
                   <p className="text-sm text-text-secondary">
@@ -536,17 +569,23 @@ export default function Projects() {
                 </div>
                 <h3 className="flex flex-wrap items-center gap-1.5 text-lg font-semibold text-text-primary">
                   {detailItem.name}
-                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">L2 · 商机</span>
+                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">L2 · 商机</span>
                   {detailItem.sourceLeadId && detailItem.milestone > 0 && (
-                    <span className="rounded-full bg-success/10 px-2 py-0.5 text-[10px] font-semibold text-success">↗ 线索转化定级落位</span>
+                    <button
+                      onClick={() => navigate(`/leads?id=${detailItem.sourceLeadId}`)}
+                      className="flex items-center gap-0.5 rounded-full bg-success/10 px-2 py-0.5 text-[11px] font-semibold text-success transition-colors hover:bg-success/20"
+                      title="查看来源线索"
+                    >
+                      <ArrowUpRight size={10} /> 线索转化定级落位
+                    </button>
                   )}
                   {detailItem.healthScore != null && (
-                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
                       detailItem.healthScore >= 70 ? 'bg-success/10 text-success' : detailItem.healthScore >= 40 ? 'bg-warning/10 text-warning' : 'bg-danger/10 text-danger'
                     }`}>健康 {detailItem.healthScore}</span>
                   )}
                   {detailItem.derivation?.illusion && (
-                    <span className="rounded-full border border-dashed border-danger px-2 py-0.5 text-[10px] font-semibold text-danger">疑似幻觉</span>
+                    <span className="rounded-full border border-dashed border-danger px-2 py-0.5 text-[11px] font-semibold text-danger">疑似幻觉</span>
                   )}
                 </h3>
                 <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-text-secondary">
@@ -654,24 +693,25 @@ export default function Projects() {
                         const curGate = i === detailItem.milestone ? checkGateCompletion(detailItem) : null
                         return (
                           <div key={i} className="flex flex-col items-center gap-1.5" title={label}>
-                            <div className={`relative z-10 flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold text-white ${
+                            <div className={`relative z-10 flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-bold text-white ${
                               i <= detailItem.milestone ? milestoneColors[i] : 'bg-border'
                             }`}>
                               {i < detailItem.milestone ? <CheckCircle2 size={12} /> : (i + 1)}
                             </div>
-                            <span className={`text-center text-[10px] leading-tight ${
+                            <span className={`text-center text-[11px] leading-tight ${
                               i === detailItem.milestone ? 'font-medium text-primary' : 'text-text-tertiary'
                             }`}>
                               {i === detailItem.milestone ? label : `M${i}`}
                             </span>
-                            {/* 证据锚点（ADR-0003）：已完成 ✓ 锚定 / 当前步显示缺口 */}
-                            <span className={`text-[9px] leading-tight ${
+                            {/* 证据锚点（ADR-0003）：已完成锚定 / 当前步缺口（审计 #18：9px 符号 → 11px SVG） */}
+                            <span className={`flex items-center gap-0.5 text-[11px] leading-tight ${
                               i < detailItem.milestone ? 'text-success' : i === detailItem.milestone ? 'text-primary' : 'text-text-tertiary/60'
                             }`}>
-                              {i < detailItem.milestone ? '✓ 锚定'
+                              {i < detailItem.milestone
+                                ? <><Check size={10} /> 锚定</>
                                 : i === detailItem.milestone
-                                  ? (curGate?.completed ? '◉ 可推进' : `◉ 缺${curGate?.missing.length ?? 0}项`)
-                                  : '○'}
+                                  ? <><Dot size={12} />{curGate?.completed ? '可推进' : `缺${curGate?.missing.length ?? 0}项`}</>
+                                  : <Circle size={8} />}
                             </span>
                           </div>
                         )
@@ -690,7 +730,7 @@ export default function Projects() {
                     <div className="rounded-xl border border-border bg-background p-4">
                       <div className="mb-3 flex items-center justify-between">
                         <h4 className="text-sm font-medium text-text-secondary">{checklist.title}</h4>
-                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${gateStatus.completed ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning'}`}>
+                        <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${gateStatus.completed ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning'}`}>
                           {gateStatus.completed ? '已满足推进条件' : '未满足推进条件'}
                         </span>
                       </div>
@@ -714,7 +754,7 @@ export default function Projects() {
                             return (
                               <div key={field.path} className="flex items-center justify-between">
                                 <span className="text-xs text-text-secondary">{field.label}</span>
-                                <span className={`text-[10px] font-medium ${valid ? 'text-success' : 'text-warning'}`}>
+                                <span className={`text-[11px] font-medium ${valid ? 'text-success' : 'text-warning'}`}>
                                   {valid ? '已录入' : '未录入'}
                                 </span>
                               </div>
@@ -805,7 +845,7 @@ export default function Projects() {
                         className="flex items-center gap-3 rounded-lg bg-surface px-3 py-2 cursor-pointer hover:bg-surface-elevated/50 transition-colors"
                         onClick={() => setVisitDetailId(v.id)}
                       >
-                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${
                           v.visitType === 'offline' ? 'bg-primary/10 text-primary' :
                           v.visitType === 'online' ? 'bg-success/10 text-success' :
                           'bg-warning/10 text-warning'
@@ -844,7 +884,7 @@ export default function Projects() {
                             <p className="text-xs text-text-tertiary">截止：{new Date(t.deadline).toLocaleDateString('zh-CN')}</p>
                           )}
                         </div>
-                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${taskStatusMap[t.status]?.color || ''}`}>
+                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${taskStatusMap[t.status]?.color || ''}`}>
                           {taskStatusMap[t.status]?.label || t.status}
                         </span>
                       </div>
@@ -879,9 +919,9 @@ export default function Projects() {
         open={visitFormOpen}
         onClose={(created) => {
           setVisitFormOpen(false)
-          // 录完拜访后刷新详情（近期拜访/健康度/下次跟进都会变）
+          // 录完拜访后走失效矩阵（详情/列表/指标/任务/看板联动刷新，审计 #12）
           if (created && detailId) {
-            queryClient.invalidateQueries({ queryKey: ['project', detailId] })
+            invalidateVisitRelated(queryClient, { visitId: undefined, projectId: detailId })
           }
         }}
         initialData={
@@ -904,7 +944,7 @@ export default function Projects() {
 /** 三阶段着色（ADR-0003 / 决策⑧）：M0-2 蓝 / M3-5 紫 / M6-8 绿 */
 const PHASES = [
   { name: '前期 · 信息收集', cls: 'border-t-primary', range: [0, 2], label: 'bg-primary' },
-  { name: '中期 · 方案推进', cls: 'border-t-[#7c3aed]', range: [3, 5], label: 'bg-[#7c3aed]' },
+  { name: '中期 · 方案推进', cls: 'border-t-violet-600', range: [3, 5], label: 'bg-violet-600' },
   { name: '后期 · 成交落地', cls: 'border-t-success', range: [6, 8], label: 'bg-success' },
 ] as const
 
@@ -923,6 +963,9 @@ function ProjectCard({ project, onSelect, onAdvance }: {
   const hs = project.healthScore
   return (
     <div
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => e.key === 'Enter' && onSelect(project)}
       onClick={() => onSelect(project)}
       className={`cursor-pointer rounded-lg border bg-surface p-2.5 shadow-sm transition-all hover:border-primary/30 hover:shadow-glow ${
         d?.illusion ? 'border-dashed border-danger/60 bg-danger/[0.02]'
@@ -933,14 +976,14 @@ function ProjectCard({ project, onSelect, onAdvance }: {
       <div className="flex items-start justify-between gap-2">
         <p className="line-clamp-2 text-xs font-semibold text-text-primary">
           {project.name}
-          {d?.illusion && <span className="ml-1 text-[10px] font-medium text-danger">疑似幻觉</span>}
+          {d?.illusion && <span className="ml-1 text-[11px] font-medium text-danger">疑似幻觉</span>}
         </p>
       </div>
       <p className="mt-0.5 truncate text-[11px] text-text-tertiary">{project.company?.name || '无关联客户'}</p>
       <div className="mt-1.5 flex items-center gap-1.5">
         <span className="text-sm font-bold text-text-primary">¥{project.amount ?? '-'}</span>
         {hs != null && (
-          <span className={`ml-auto rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+          <span className={`ml-auto rounded-full px-1.5 py-0.5 text-[11px] font-bold ${
             hs >= 70 ? 'bg-success/10 text-success' : hs >= 40 ? 'bg-warning/10 text-warning' : 'bg-danger/10 text-danger'
           }`}>
             健康 {hs}
@@ -948,15 +991,15 @@ function ProjectCard({ project, onSelect, onAdvance }: {
         )}
       </div>
       <div className="mt-1.5 flex flex-wrap gap-1">
-        {d && d.decisionChainCount > 0 && <span className="rounded-md bg-surface-elevated px-1.5 py-0.5 text-[10px] text-text-tertiary">决策链 {d.decisionChainCount}人</span>}
-        {d && d.evidenceCount > 0 && <span className="rounded-md bg-surface-elevated px-1.5 py-0.5 text-[10px] text-text-tertiary">证据链 {d.evidenceCount}条</span>}
+        {d && d.decisionChainCount > 0 && <span className="rounded-md bg-surface-elevated px-1.5 py-0.5 text-[11px] text-text-tertiary">决策链 {d.decisionChainCount}人</span>}
+        {d && d.evidenceCount > 0 && <span className="rounded-md bg-surface-elevated px-1.5 py-0.5 text-[11px] text-text-tertiary">证据链 {d.evidenceCount}条</span>}
         {d && d.waiting && project.waitingStatus && (
-          <span className="rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+          <span className="rounded-md bg-primary/10 px-1.5 py-0.5 text-[11px] font-medium text-primary">
             {WAITING_STATUSES[project.waitingStatus as WaitingStatus] || '等待中'}
           </span>
         )}
         {d && !d.waiting && d.staleDays > 0 && (
-          <span className="rounded-md bg-danger/10 px-1.5 py-0.5 text-[10px] font-bold text-danger">停滞 {d.staleDays}天</span>
+          <span className="rounded-md bg-danger/10 px-1.5 py-0.5 text-[11px] font-bold text-danger">停滞 {d.staleDays}天</span>
         )}
       </div>
       {(d?.nextAction || d?.illusion) && (
@@ -974,7 +1017,7 @@ function ProjectCard({ project, onSelect, onAdvance }: {
       {project.milestone < 8 && !project.closedAt && gateStatus.completed && (
         <button
           onClick={(e) => { e.stopPropagation(); onAdvance(project) }}
-          className="mt-1.5 w-full rounded-md bg-primary py-0.5 text-[10px] font-medium text-white transition-colors hover:bg-primary/90"
+          className="mt-1.5 w-full rounded-md bg-primary py-0.5 text-[11px] font-medium text-white transition-colors hover:bg-primary/90"
         >
           推进 →
         </button>
@@ -991,7 +1034,7 @@ function ProjectCard({ project, onSelect, onAdvance }: {
         </div>
       )}
       {project.closedAt && !project.lostInfo && (
-        <p className="mt-1.5 rounded-md bg-success/10 py-0.5 text-center text-[10px] font-medium text-success">赢单</p>
+        <p className="mt-1.5 rounded-md bg-success/10 py-0.5 text-center text-[11px] font-medium text-success">赢单</p>
       )}
     </div>
   )
@@ -1049,13 +1092,13 @@ function ProjectBoard({
         {columns.map((col) => {
           const phase = phaseOf(col.milestone)
           const amountSum = col.items.reduce((s, p) => s + Number(p.amount ?? 0), 0)
-          // 列脚瓶颈提示：单列 ≥3 单或该列全量停滞超 4 周
+          // 列脚瓶颈提示：单列 ≥3 单堆积（审计 #13：注释与实现对齐）
           const bottleneck = col.items.length >= 3 ? `${milestoneLabels[col.milestone]} 堆积 ${col.items.length} 单，检查本环节是否卡脖子` : ''
           return (
             <div key={col.milestone} className={`flex w-56 flex-col rounded-xl border border-border border-t-2 bg-surface-elevated/50 ${phase.cls}`}>
               <div className="border-b border-border px-2.5 py-2">
                 <div className="flex items-center gap-1.5">
-                  <span className={`rounded px-1 py-0.5 text-[10px] font-bold text-white ${phase.label}`}>M{col.milestone}</span>
+                  <span className={`rounded px-1 py-0.5 text-[11px] font-bold text-white ${phase.label}`}>M{col.milestone}</span>
                   <span className="text-xs font-bold text-text-primary">{col.label}</span>
                 </div>
                 <p className="mt-0.5 flex justify-between text-[11px] text-text-tertiary">
@@ -1070,7 +1113,7 @@ function ProjectBoard({
                 {col.items.length === 0 && <p className="py-3 text-center text-[11px] text-text-tertiary">—</p>}
               </div>
               {bottleneck && (
-                <div className="border-t border-dashed border-border px-2.5 py-1.5 text-[10px] text-danger">{bottleneck}</div>
+                <div className="border-t border-dashed border-border px-2.5 py-1.5 text-[11px] text-danger">{bottleneck}</div>
               )}
             </div>
           )
@@ -1079,7 +1122,7 @@ function ProjectBoard({
       {/* 图例 */}
       <div className="mt-2 flex flex-wrap gap-4 px-1 text-[11px] text-text-tertiary">
         <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-primary align-middle" />M0-2 前期·信息收集</span>
-        <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-[#7c3aed] align-middle" />M3-5 中期·方案推进</span>
+        <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-violet-600 align-middle" />M3-5 中期·方案推进</span>
         <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-success align-middle" />M6-8 后期·成交落地</span>
         <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-danger/20 align-middle" />红标=停滞/幻觉</span>
         <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-primary/20 align-middle" />紫/蓝标=合理等待（不计停滞）</span>

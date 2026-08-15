@@ -143,7 +143,7 @@ export default function CustomerForm({ open, onClose, initialData }: CustomerFor
       <form onSubmit={handleSubmit} className="max-h-[72vh] space-y-5 overflow-y-auto pr-1">
         {/* AI 来源条：小销建档时提醒人工核实 */}
         {isAiSourced && (
-          <div className="flex items-center gap-2 rounded-lg border border-[#ddd6fe] bg-[#f5f3ff] px-3 py-2 text-xs text-[#5b21b6]">
+          <div className="flex items-center gap-2 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-700">
             <Bot size={14} className="shrink-0" />
             本客户由「小销助手」从对话中收集，可信度：<b>中</b>，请核实补充后保存。
           </div>
