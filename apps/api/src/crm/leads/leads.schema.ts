@@ -3,6 +3,8 @@ import { isValidPhone, isValidEmail, PHONE_ERROR_MESSAGE, EMAIL_ERROR_MESSAGE } 
 
 export const LeadSourceEnum = z.enum([
   'cold_call',
+  'visit_discovery',
+  'ai_collected',
   'referral',
   'exhibition',
   'online',
@@ -20,6 +22,8 @@ export const HumanInfoSchema = z.object({
   decisionChain: z.string().optional(),
   supporter: z.string().optional(),
   opponent: z.string().optional(),
+  contactRole: z.string().optional(),
+  personality: z.string().optional(),
 }).default({})
 
 export const BusinessInfoSchema = z.object({
@@ -27,12 +31,14 @@ export const BusinessInfoSchema = z.object({
   timeline: z.string().optional(),
   painPoints: z.string().optional(),
   expectedOutcome: z.string().optional(),
+  competitors: z.string().optional(),
 }).default({})
 
 export const FinanceInfoSchema = z.object({
   budget: z.string().optional(),
   budgetSource: z.string().optional(),
   approvalProcess: z.string().optional(),
+  budgetSignal: z.enum(['none', 'mentioned', 'range', 'confirmed']).optional(),
 }).default({})
 
 export const CreateLeadSchema = z.object({
@@ -74,8 +80,13 @@ export const LoseSchema = z.object({
 
 export const ListLeadsQuerySchema = z.object({
   status: LeadStatusEnum.optional(),
+  /** 逗号分隔多状态（如 培育中 = NEW,PAUSED） */
+  statusIn: z.string().optional(),
   grade: z.enum(['A', 'B', 'C']).optional(),
   search: z.string().optional(),
+  source: z.string().optional(),
+  /** 只看过转化门禁 5/5 的线索（ADR-0002「可转化」页签，内存过滤） */
+  ready: z.enum(['true', 'false']).optional(),
   page: z.string().transform(Number).default('1'),
   pageSize: z.string().transform(Number).default('20'),
 })

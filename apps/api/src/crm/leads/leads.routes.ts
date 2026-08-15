@@ -14,9 +14,11 @@ import {
   timeline,
   followUps,
 } from './leads.controller.js'
+import { leadMetrics } from './leads.derivation.service.js'
 
 export async function leadsRoutes(app: FastifyInstance) {
   app.get('/', list)
+  app.get('/metrics', leadMetrics)
   app.get('/:id', get)
   app.post('/', create)
   app.put('/:id', update)
