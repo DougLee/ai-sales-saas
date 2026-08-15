@@ -75,7 +75,7 @@ export default function TeamRanking() {
           </div>
 
           <div className="overflow-hidden rounded-2xl border border-border bg-surface">
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="w-full min-w-[900px] text-sm">
               <thead>
                 <tr className="border-b border-border bg-surface-elevated/50 text-xs text-text-tertiary">
                   <th className="px-4 py-3 text-left font-medium">#</th>
@@ -140,7 +140,7 @@ export default function TeamRanking() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           </div>
         </>
       )}

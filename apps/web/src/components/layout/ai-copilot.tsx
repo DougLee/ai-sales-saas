@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
+import { entityRouteTo } from '../../lib/entity-links.js'
 import {
   Send,
   Mic,
@@ -33,7 +34,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useCopilotStore } from '../../stores/copilot-store.js'
 
 interface ActionItem {
-  type: 'create_task' | 'create_visit' | 'create_lead' | 'set_reminder' | 'get_briefing' | 'navigate'
+  type: 'create_task' | 'create_visit' | 'create_lead' | 'set_reminder' | 'get_briefing' | 'navigate' | 'convert_lead' | 'claim_company' | 'confirm_item'
   label: string
   params: Record<string, unknown>
 }
@@ -99,6 +100,24 @@ async function executeAction(
       await post('/api/tasks', body)
       toast('提醒设置成功', 'success')
       queryClient.invalidateQueries({ queryKey: ['tasks'] })
+    } else if (action.type === 'convert_lead') {
+      const leadId = action.params.leadId as string
+      const res = await post<{ project?: { id: string } }>(`/api/leads/${leadId}/convert`, {})
+      toast('线索转化商机成功', 'success')
+      queryClient.invalidateQueries({ queryKey: ['leads'] })
+      queryClient.invalidateQueries({ queryKey: ['lead-metrics'] })
+      queryClient.invalidateQueries({ queryKey: ['projects'] })
+      queryClient.invalidateQueries({ queryKey: ['project-metrics'] })
+      if (res?.project?.id) navigate(entityRouteTo('project', res.project.id))
+    } else if (action.type === 'claim_company') {
+      await post(`/api/companies/${action.params.companyId}/claim`)
+      toast('认领成功', 'success')
+      queryClient.invalidateQueries({ queryKey: ['companies'] })
+      queryClient.invalidateQueries({ queryKey: ['company-metrics'] })
+    } else if (action.type === 'confirm_item') {
+      await post(`/api/confirmations/${action.params.itemId}/resolve`, { action: 'confirm' })
+      toast('待确认项已确认', 'success')
+      queryClient.invalidateQueries({ queryKey: ['confirmations'] })
     } else if (action.type === 'get_briefing') {
       navigate('/')
       toast('已切换到工作台查看简报', 'success')
@@ -128,7 +147,7 @@ const QUICK_PROMPTS: Record<string, Array<{ label: string; prompt: string }>> = 
   ],
   workbench: [
     { label: '今日简报', prompt: '今日作战简报' },
-    { label: 'Pipeline Review', prompt: '今日团队Pipeline Review' },
+    { label: '商机复盘', prompt: '今日团队商机推进复盘' },
   ],
   global: [
     { label: '今日简报', prompt: '今日作战简报' },

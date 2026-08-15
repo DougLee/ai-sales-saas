@@ -123,7 +123,13 @@ function isNavActive(
   });
 }
 
-export default function Sidebar() {
+export default function Sidebar({
+  mobileOpen = false,
+  onMobileClose,
+}: {
+  mobileOpen?: boolean;
+  onMobileClose?: () => void;
+}) {
   const navigate = useNavigate();
   const location = useLocation();
   const isAdmin = useHasRole("TENANT_ADMIN", "SUPER_ADMIN");
@@ -143,7 +149,20 @@ export default function Sidebar() {
   });
 
   return (
-    <aside className="flex w-[152px] flex-col border-r border-border bg-surface py-4">
+    <>
+      {/* 移动端遮罩（审计 #19：<lg 侧栏抽屉化） */}
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/30 lg:hidden"
+          onClick={onMobileClose}
+          aria-hidden
+        />
+      )}
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 flex w-[152px] flex-col border-r border-border bg-surface py-4 transition-transform duration-200 lg:static lg:z-auto lg:translate-x-0 ${
+          mobileOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
       <div className="mb-6 flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-white font-bold text-lg mx-4">
         AI
       </div>
@@ -154,7 +173,7 @@ export default function Sidebar() {
           return (
             <button
               key={item.id}
-              onClick={() => navigate(item.path)}
+              onClick={() => { navigate(item.path); onMobileClose?.(); }}
               className={`group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
                 active
                   ? "bg-primary-muted text-primary shadow-glow"
@@ -169,5 +188,6 @@ export default function Sidebar() {
         })}
       </nav>
     </aside>
+    </>
   );
 }

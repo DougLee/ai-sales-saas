@@ -82,7 +82,7 @@ export default function HelpCenter() {
   return (
     <div className="flex h-full">
       {/* Left Sidebar - TOC */}
-      <aside className="w-64 shrink-0 overflow-y-auto border-r border-border bg-surface">
+      <aside className="hidden w-64 shrink-0 lg:block shrink-0 overflow-y-auto border-r border-border bg-surface">
         <div className="sticky top-0 z-10 border-b border-border bg-surface px-4 py-3">
           <div className="flex items-center gap-2 text-text-primary">
             <BookOpen size={18} className="text-primary" />

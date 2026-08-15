@@ -1,5 +1,5 @@
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import Sidebar from './components/layout/sidebar'
 import TopBar from './components/layout/topbar'
 import AiCopilot from './components/layout/ai-copilot'
@@ -34,6 +34,7 @@ const ADMINS: UserRole[] = ['TENANT_ADMIN', 'SUPER_ADMIN']
 function Layout() {
   const navigate = useNavigate()
   const visible = useCopilotStore((state) => state.visible)
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
 
   // 监听 AI 回答中的实体链接点击，跳转到对应详情
   useEffect(() => {
@@ -48,9 +49,9 @@ function Layout() {
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background">
-      <Sidebar />
+      <Sidebar mobileOpen={mobileNavOpen} onMobileClose={() => setMobileNavOpen(false)} />
       <main className="flex flex-1 flex-col min-w-0">
-        <TopBar />
+        <TopBar onMenuClick={() => setMobileNavOpen(true)} />
         <div className="flex-1 overflow-auto p-6">
           <Routes>
             <Route path="/" element={<Dashboard />} />

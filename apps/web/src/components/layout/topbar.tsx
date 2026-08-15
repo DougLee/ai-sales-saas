@@ -1,4 +1,4 @@
-import { Sun, Moon, Bell, LogOut } from 'lucide-react'
+import { Menu, Sun, Moon, Bell, LogOut } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { logout } from '../../lib/api.js'
 import { useUnreadAlerts } from '../../hooks/use-alerts.js'
@@ -23,7 +23,7 @@ const pageTitles: Record<string, string> = {
   '/help': '帮助中心',
 }
 
-export default function TopBar() {
+export default function TopBar({ onMenuClick }: { onMenuClick?: () => void }) {
   const navigate = useNavigate()
   const { isDark, toggleTheme } = useTheme()
   const location = useLocation()
@@ -40,6 +40,15 @@ export default function TopBar() {
   return (
     <header className="flex h-14 items-center justify-between border-b border-border bg-surface px-6">
       <div className="flex items-center gap-2">
+        {onMenuClick && (
+          <button
+            onClick={onMenuClick}
+            aria-label="打开导航菜单"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-text-tertiary hover:bg-surface-elevated hover:text-text-secondary transition-colors lg:hidden"
+          >
+            <Menu size={18} />
+          </button>
+        )}
         <h2 className="text-sm font-medium text-text-secondary">
           {pageTitle}
         </h2>
