@@ -22,6 +22,20 @@ export default {
         'text-primary': 'var(--color-text-primary)',
         'text-secondary': 'var(--color-text-secondary)',
         'text-tertiary': 'var(--color-text-tertiary)',
+        /* UI 统一设计系统 Tokens v2（issue #36）：第二/三色轴走 CSS 变量，明暗双档 */
+        /* 漏斗三段色：颜色即阶段（育单蓝 / 谈单紫 / 成单绿） */
+        nurture: 'var(--color-funnel-nurture)',
+        negotiate: 'var(--color-funnel-negotiate)',
+        close: 'var(--color-funnel-close)',
+        /* 验证水位色：single 橙 / cross 青 / final 绿 / manual 紫 */
+        'level-single': 'var(--color-level-single)',
+        'level-cross': 'var(--color-level-cross)',
+        'level-final': 'var(--color-level-final)',
+        'level-manual': 'var(--color-level-manual)',
+        /* 紧迫度 */
+        'urgency-high': 'var(--color-urgency-high)',
+        'urgency-mid': 'var(--color-urgency-mid)',
+        'urgency-low': 'var(--color-urgency-low)',
       },
       keyframes: {
         /* 替代未安装的 tailwindcss-animate（审计 #12 死类）：右侧滑入 */
@@ -41,6 +55,13 @@ export default {
       },
       boxShadow: {
         glow: '0 0 20px rgba(10,132,255,0.15)',
+        /* Tokens v2 度量：卡片常态 / 悬浮抬升（issue #36） */
+        card: 'var(--shadow-card)',
+        lift: 'var(--shadow-lift)',
+      },
+      borderRadius: {
+        card: 'var(--radius-card)',
+        inner: 'var(--radius-inner)',
       },
     },
   },

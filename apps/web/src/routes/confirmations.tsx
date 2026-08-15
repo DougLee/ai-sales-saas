@@ -203,7 +203,7 @@ export default function Confirmations() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-semibold text-text-primary">待确认收件箱</h2>
+          <h2 className="text-xl font-semibold tracking-tight text-text-primary">待确认收件箱</h2>
           <p className="mt-1 text-xs text-text-tertiary">
             扫一遍清单，勾掉不对的，点一次确认就处理完了
           </p>

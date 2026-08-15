@@ -45,6 +45,7 @@ import AiEntryButton from '../components/ai/ai-entry-button.js'
 import { EmptyState, LoadingState, ErrorState } from '../components/ui/states.js'
 import { useConfirmDialog } from '../hooks/use-confirm-dialog.js'
 import { ViewTabs, Pagination } from '../components/ui/tabs.js'
+import { PageHeader } from '../components/ui/page-header.js'
 
 const statusLabels: Record<string, string> = {
   NEW: '新建',
@@ -261,27 +262,28 @@ export default function Leads() {
 
   return (
     <div className="space-y-4">
-      {/* 页头 */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <h2 className="text-xl font-semibold text-text-primary">线索管理</h2>
-          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">L1 · 机会信号层</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <AiEntryButton
-            prompt="帮我分析当前线索池，哪些线索值得优先跟进"
-            label="问小销"
-            variant="primary"
-            className="rounded-xl px-4 py-2 text-sm"
-          />
-          <button
-            onClick={() => { setEditingItem(undefined); setOpen(true) }}
-            className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90"
-          >
-            <Plus size={16} /> 新建线索
-          </button>
-        </div>
-      </div>
+      {/* 页头（UI 统一 issue #36：PageHeader 同构） */}
+      <PageHeader
+        title="线索管理"
+        level="L1"
+        description="机会信号的采集、评分与培育——达标即转化商机"
+        actions={
+          <>
+            <AiEntryButton
+              prompt="帮我分析当前线索池，哪些线索值得优先跟进"
+              label="问小销"
+              variant="primary"
+              className="rounded-xl px-4 py-2 text-sm"
+            />
+            <button
+              onClick={() => { setEditingItem(undefined); setOpen(true) }}
+              className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90"
+            >
+              <Plus size={16} /> 新建线索
+            </button>
+          </>
+        }
+      />
 
       {/* 页签：状态即视图，可转化绿字突出（ViewTabs 统一组件） */}
       <ViewTabs

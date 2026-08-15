@@ -84,8 +84,9 @@ export default function Visits() {
 
   return (
     <div className="space-y-4">
+      {/* 页头（UI 统一 issue #36：PageHeader 同构） */}
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold text-text-primary">拜访记录</h2>
+        <h2 className="text-xl font-semibold tracking-tight text-text-primary">拜访记录</h2>
         <div className="flex gap-2">
           <button
             onClick={() => setVoiceOpen(true)}

@@ -20,6 +20,28 @@
     --color-warning: #B45309;
     --color-danger: #DC2626;
     --color-info: #0369A1;
+    /* ===== UI 统一设计系统 Tokens v2（issue #36）=====
+       第二色轴：漏斗三段色——颜色即阶段，全站一色一义
+       （商机看板列 / 推进卡进度条 / 战役卡微条 / 报表漏斗图共用） */
+    --color-funnel-nurture: #0071E3;   /* 育单 M0-M3 蓝 */
+    --color-funnel-negotiate: #7C5CFC; /* 谈单 M4-M6 紫 */
+    --color-funnel-close: #0E9F6E;     /* 成单 M7-M8 绿 */
+    /* 第三色轴：验证水位色——对接 #33 EvidenceSource / #35 推进卡 v2
+       （推进卡字段徽章 / 过堂抽屉影响区 / 商机真假条 / 报表完成度共用） */
+    --color-level-single: #B45309;  /* 单源 橙 */
+    --color-level-cross: #0369A1;   /* 交叉印证 青 */
+    --color-level-final: #15803D;   /* 坐实 绿 */
+    --color-level-manual: #7C3AED;  /* 人工 紫 */
+    /* 紧迫度（今日作战战役排序 / 任务列表） */
+    --color-urgency-high: #DC2626;
+    --color-urgency-mid: #B45309;
+    --color-urgency-low: #71717A;
+    /* 度量：间距律 4 的倍数；卡片圆角 16 / 内嵌件 11 / pill 999 */
+    --radius-card: 16px;
+    --radius-inner: 11px;
+    --shadow-card: 0 1px 3px rgba(28, 28, 30, 0.05), 0 6px 20px rgba(28, 28, 30, 0.04);
+    --shadow-lift: 0 4px 10px rgba(28, 28, 30, 0.08), 0 12px 32px rgba(28, 28, 30, 0.10);
+    --ease-spring: cubic-bezier(0.32, 0.72, 0, 1);
   }
 
   html.dark {
@@ -37,6 +59,17 @@
     --color-warning: #FF9F0A;
     --color-danger: #FF453A;
     --color-info: #64D2FF;
+    /* Tokens v2 暗色档：亮色系，作文字色对暗底保持 AA */
+    --color-funnel-nurture: #409CFF;
+    --color-funnel-negotiate: #9D84FF;
+    --color-funnel-close: #34C08E;
+    --color-level-single: #FF9F0A;
+    --color-level-cross: #64D2FF;
+    --color-level-final: #32D74B;
+    --color-level-manual: #A78BFA;
+    --color-urgency-high: #FF453A;
+    --color-urgency-mid: #FF9F0A;
+    --color-urgency-low: #8E8E96;
   }
 
   html {

@@ -11,6 +11,7 @@ import { entityRouteTo } from '../lib/entity-links.js'
 import { DEFAULT_MILESTONE_GATE_RULES } from '@ai-sales/shared'
 import { invalidateVisitRelated } from '../lib/invalidation.js'
 import { Pagination } from '../components/ui/tabs.js'
+import { PageHeader } from '../components/ui/page-header.js'
 import { useDebouncedValue } from '../hooks/use-debounced-value.js'
 import AiEntryButton from '../components/ai/ai-entry-button.js'
 import ProjectForm from '../components/forms/project-form.js'
@@ -423,12 +424,13 @@ export default function Projects() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <h2 className="text-xl font-semibold text-text-primary">商机推进</h2>
-          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">L2 · 立项推进层</span>
-        </div>
-        <div className="flex items-center gap-2">
+      {/* 页头（UI 统一 issue #36：PageHeader 同构） */}
+      <PageHeader
+        title="商机推进"
+        level="L2"
+        description="线索转化的商机在这里推进到赢单 · 三段九级门禁推进"
+        actions={
+          <div className="flex items-center gap-2">
           <div className="flex items-center gap-1 rounded-lg border border-border bg-surface-elevated p-1">
             <button onClick={() => setViewMode('board')} className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${viewMode === 'board' ? 'bg-primary text-white' : 'text-text-secondary hover:text-text-primary'}`}>看板</button>
             <button onClick={() => setViewMode('list')} className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${viewMode === 'list' ? 'bg-primary text-white' : 'text-text-secondary hover:text-text-primary'}`}>列表</button>
@@ -447,8 +449,9 @@ export default function Projects() {
             variant="primary"
             className="rounded-xl px-4 py-2 text-sm"
           />
-        </div>
-      </div>
+          </div>
+        }
+      />
 
       {/* 指标条六格（脱水是灵魂，C 位黄卡） */}
       {metrics && (

@@ -6,6 +6,8 @@ import { useProjects } from '../hooks/use-projects.js'
 import Drawer from '../components/ui/drawer.js'
 import AiEntryButton from '../components/ai/ai-entry-button.js'
 import { EmptyState, LoadingState, ErrorState } from '../components/ui/states.js'
+import { PageHeader } from '../components/ui/page-header.js'
+import { StatusPill } from '../components/ui/status-pill.js'
 import { useConfirmDialog } from '../hooks/use-confirm-dialog.js'
 import { deadlineInfo, focusTasks, groupTasks, groupTitle, isOverdue } from '../lib/task-utils.js'
 
@@ -147,39 +149,43 @@ export default function Tasks() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <h2 className="text-xl font-semibold text-text-primary">任务管理</h2>
-          {overdueCount > 0 && (
-            <span className="rounded-full bg-danger/10 px-2.5 py-1 text-xs font-medium text-danger">
-              {overdueCount} 条已逾期
-            </span>
-          )}
-        </div>
-        <div className="flex gap-2">
-          <AiEntryButton
-            prompt="帮我梳理当前任务，哪些需要优先处理"
-            label="问小销"
-            variant="primary"
-            className="rounded-xl px-4 py-2 text-sm"
-          />
-          <div className="relative">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="搜索任务..."
-              className="h-10 rounded-xl border border-border bg-surface pl-9 pr-4 text-sm text-text-primary outline-none placeholder:text-text-tertiary focus:border-primary"
+      {/* 页头（UI 统一 issue #36：PageHeader 同构；逾期徽章走 StatusPill） */}
+      <PageHeader
+        title="任务管理"
+        description="全部待办的总清单——今日作战看主线，这里看全量"
+        actions={
+          <>
+            <StatusPill tone="danger" className="!h-6 !px-3 !text-xs" dot>
+              {overdueCount > 0 ? `${overdueCount} 条已逾期` : '无逾期'}
+            </StatusPill>
+            <AiEntryButton
+              prompt="帮我梳理当前任务，哪些需要优先处理"
+              label="问小销"
+              variant="primary"
+              className="rounded-xl px-4 py-2 text-sm"
             />
-          </div>
-          <button
-            onClick={() => { setEditingItem(undefined); setOpenForm(true) }}
-            className="flex items-center gap-2 whitespace-nowrap rounded-xl bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90"
-          >
-            <Plus size={16} /> 新建任务
-          </button>
+          </>
+        }
+      />
+      <div className="flex justify-end">
+        <div className="relative">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="搜索任务..."
+            className="h-10 w-64 rounded-xl border border-border bg-surface pl-9 pr-4 text-sm text-text-primary outline-none placeholder:text-text-tertiary focus:border-primary"
+          />
         </div>
+      </div>
+      <div className="flex justify-end">
+        <button
+          onClick={() => { setEditingItem(undefined); setOpenForm(true) }}
+          className="flex items-center gap-2 whitespace-nowrap rounded-xl bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90"
+        >
+          <Plus size={16} /> 新建任务
+        </button>
       </div>
 
       {/* 状态页签：默认只看进行中，已完成/已取消收进页签 */}

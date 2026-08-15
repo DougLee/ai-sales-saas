@@ -64,7 +64,7 @@ export default function AlertsPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-text-primary">AI 巡检中心</h1>
+          <h1 className="text-xl font-semibold tracking-tight text-text-primary">AI 巡检中心</h1>
           {data && (
             <p className="mt-1 text-sm text-text-tertiary">
               共 {data.totalAlerts} 条预警 · {data.unreadCount ?? 0} 条未读 · 上次扫描 {new Date(data.scanTime).toLocaleString('zh-CN')}

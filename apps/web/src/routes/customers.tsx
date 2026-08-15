@@ -16,6 +16,7 @@ import { EmptyState, LoadingState, ErrorState } from '../components/ui/states.js
 import { useConfirmDialog } from '../hooks/use-confirm-dialog.js'
 import { TimelineView } from '../components/timeline/timeline-view.js'
 import { ViewTabs, Pagination } from '../components/ui/tabs.js'
+import { PageHeader } from '../components/ui/page-header.js'
 
 const industryLabels: Record<string, string> = {
   education: '教育',
@@ -265,33 +266,28 @@ export default function Customers() {
 
   return (
     <div className="space-y-4">
-      {/* 页头 */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <h2 className="text-xl font-semibold text-text-primary">
-            {tab === 'target' ? '目标客户池' : '客户管理'}
-          </h2>
-          {tab === 'target' && (
-            <span className="rounded-full bg-warning/10 px-2 py-0.5 text-[11px] font-semibold text-warning">
-              L0 · 销售的起点
-            </span>
-          )}
-        </div>
-        <div className="flex gap-2">
-          <AiEntryButton
-            prompt="帮我分析当前客户池，哪些客户有商机潜力"
-            label="问小销"
-            variant="primary"
-            className="rounded-xl px-4 py-2 text-sm"
-          />
-          <button
-            onClick={() => { setEditingItem(undefined); setOpenForm(true) }}
-            className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90"
-          >
-            <Plus size={16} /> 新建客户
-          </button>
-        </div>
-      </div>
+      {/* 页头（UI 统一 issue #36：PageHeader 同构） */}
+      <PageHeader
+        title={tab === 'target' ? '目标客户池' : '客户管理'}
+        level="L0"
+        description={tab === 'target' ? '目标客户的发现、认领与培育——销售漏斗的起点' : '已成交与在跟客户的档案管理'}
+        actions={
+          <>
+            <AiEntryButton
+              prompt="帮我分析当前客户池，哪些客户有商机潜力"
+              label="问小销"
+              variant="primary"
+              className="rounded-xl px-4 py-2 text-sm"
+            />
+            <button
+              onClick={() => { setEditingItem(undefined); setOpenForm(true) }}
+              className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90"
+            >
+              <Plus size={16} /> 新建客户
+            </button>
+          </>
+        }
+      />
 
       {/* 视图页签：状态即视图，计数挂页签上（ViewTabs 统一组件） */}
       <ViewTabs

@@ -1,6 +1,7 @@
 ﻿import { Trophy, Activity, Target, Clock, AlertCircle, Bell, Calendar, AlertTriangle, TrendingDown, MapPinOff, Sparkles } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 import { LoadingState, ErrorState } from '../components/ui/states.js'
+import { PageHeader } from '../components/ui/page-header.js'
 import { useDashboardStats } from '../hooks/use-dashboard.js'
 import { useAlerts } from '../hooks/use-alerts.js'
 import { useNavigate } from 'react-router-dom'
@@ -47,31 +48,31 @@ export default function Reports() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold text-text-primary">数据报表</h1>
-          <p className="mt-0.5 text-sm text-text-tertiary">销售漏斗与团队绩效分析</p>
-        </div>
-        <div className="flex items-center gap-2">
-          {isManager && (
+      {/* 页头（UI 统一 issue #36：PageHeader 同构） */}
+      <PageHeader
+        title="数据报表"
+        description="销售漏斗与团队绩效分析"
+        actions={
+          <>
+            {isManager && (
+              <button
+                onClick={() => navigate('/team-ranking')}
+                className="flex items-center gap-2 rounded-xl border border-border bg-surface px-4 py-2 text-sm font-medium text-text-secondary transition-colors hover:border-primary/40 hover:text-primary"
+                title="团队成员绩效排名（管理者视角）"
+              >
+                <Trophy size={16} /> 团队排名
+              </button>
+            )}
             <button
-              onClick={() => navigate('/team-ranking')}
-              className="flex items-center gap-2 rounded-xl border border-border bg-surface px-4 py-2 text-sm font-medium text-text-secondary transition-colors hover:border-primary/40 hover:text-primary"
-              title="团队成员绩效排名（管理者视角）"
+              onClick={() => sendAiPrompt(reviewPrompts.overall)}
+              className="flex items-center gap-2 rounded-xl bg-primary/10 px-4 py-2 text-sm font-medium text-primary hover:bg-primary/20 transition-colors"
             >
-              <Trophy size={16} /> 团队排名
+              <Sparkles size={16} />
+              AI 整体复盘
             </button>
-          )}
-          <button
-            onClick={() => sendAiPrompt(reviewPrompts.overall)}
-            className="flex items-center gap-2 rounded-xl bg-primary/10 px-4 py-2 text-sm font-medium text-primary hover:bg-primary/20 transition-colors"
-          >
-            <Sparkles size={16} />
-            AI 整体复盘
-          </button>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       {/* Stats Cards */}
       <div className="grid grid-cols-4 gap-4">

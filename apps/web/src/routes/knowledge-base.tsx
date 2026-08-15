@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { Upload, FileText, Loader2, Search, Database, Users, FolderOpen, Contact, CheckCircle, Lock, Globe, Building2 } from 'lucide-react'
 import { useKbFiles, useUploadFile, useAnalyzeFile, useEnrollBulk, useKbSearch, type FileAnalysis } from '../hooks/use-knowledge-base.js'
 import { EmptyState, LoadingState, ErrorState } from '../components/ui/states.js'
+import { PageHeader } from '../components/ui/page-header.js'
 
 const SCOPE_OPTIONS = [
   { key: 'ALL', label: '全部', icon: Database },
@@ -104,10 +105,11 @@ export default function KnowledgeBase() {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold text-text-primary">知识库</h2>
-        <span className="text-sm text-text-tertiary">{files.length} 个文件</span>
-      </div>
+      {/* 页头（UI 统一 issue #36：PageHeader 同构） */}
+      <PageHeader
+        title="知识库"
+        description={`${files.length} 个文件 · 拜访准备与方案支撑的弹药库`}
+      />
 
       {/* Upload area */}
       <div

@@ -30,7 +30,7 @@ export default function TeamRanking() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-semibold text-text-primary">团队排名</h2>
+          <h2 className="text-xl font-semibold tracking-tight text-text-primary">团队排名</h2>
           <p className="mt-1 text-xs text-text-tertiary">
             WQMI = 平均质量分 × 0.6 + 闭环率 × 40；质量分 = 行为分（0-60) + AI 信息增量（0-40)
           </p>

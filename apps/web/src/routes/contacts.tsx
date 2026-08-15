@@ -102,8 +102,9 @@ export default function Contacts() {
 
   return (
     <div className="space-y-4">
+      {/* 页头（UI 统一 issue #36：PageHeader 同构） */}
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold text-text-primary">联系人</h2>
+        <h2 className="text-xl font-semibold tracking-tight text-text-primary">联系人</h2>
         <div className="flex gap-2">
           <div className="relative">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary" />
