@@ -1,0 +1,8 @@
+{
+  "provider": "openai",
+  "openaiBaseUrl": "https://api.siliconflow.cn/v1",
+  "modelName": "deepseek-ai/DeepSeek-V3.2",
+  "embeddingModelName": "BAAI/bge-m3",
+  "embeddingDimension": 1024,
+  "_comment": "密钥不要写在这里——用 apps/api/.env 的 OPENAI_API_KEY / TAVILY_API_KEY / EMBEDDING_API_KEY / SENSEVOICE_API_KEY"
+}

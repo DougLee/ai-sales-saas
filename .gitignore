@@ -35,3 +35,6 @@ coverage/
 # Misc
 *.tmp
 .cache/
+
+# AI 运行时配置（密钥走 .env，本文件含管理员热更的非敏感项，不入库）
+apps/api/config/ai-runtime.json

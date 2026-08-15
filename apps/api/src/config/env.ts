@@ -7,6 +7,7 @@ const envSchema = z.object({
   REDIS_URL: z.string().default('redis://localhost:6379'),
   JWT_SECRET: z.string().min(32),
   OPENAI_API_KEY: z.string().optional(),
+  EMBEDDING_API_KEY: z.string().optional(),
   OPENAI_BASE_URL: z.string().optional(),
   SENSEVOICE_API_KEY: z.string().optional(),
   MINIO_ENDPOINT: z.string().optional(),

@@ -59,7 +59,7 @@ export function getAIConfig(): Required<AIConfig> {
     embeddingDimension: runtimeConfig.embeddingDimension ?? 1536,
     embeddingUseSameCredentials: runtimeConfig.embeddingUseSameCredentials ?? true,
     embeddingBaseUrl: runtimeConfig.embeddingBaseUrl ?? '',
-    embeddingApiKey: runtimeConfig.embeddingApiKey ?? '',
+    embeddingApiKey: runtimeConfig.embeddingApiKey ?? env.EMBEDDING_API_KEY ?? '',
     senseVoiceApiKey: runtimeConfig.senseVoiceApiKey ?? env.SENSEVOICE_API_KEY ?? '',
     senseVoiceBaseUrl: runtimeConfig.senseVoiceBaseUrl ?? '',
   }
