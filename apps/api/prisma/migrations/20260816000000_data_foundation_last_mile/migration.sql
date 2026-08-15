@@ -7,7 +7,9 @@
 -- ============================================
 
 -- Project.status: following / stale / won / lost，脏值归 'following'
+-- 注意：TYPE 变更前必须 DROP DEFAULT（旧 text 默认值无法自动 cast 到枚举），变更后重设
 CREATE TYPE "ProjectStatus" AS ENUM ('following', 'stale', 'won', 'lost');
+ALTER TABLE "Project" ALTER COLUMN "status" DROP DEFAULT;
 ALTER TABLE "Project" ALTER COLUMN "status" TYPE "ProjectStatus" USING (
   CASE
     WHEN "status"::text IN ('following', 'stale', 'won', 'lost') THEN "status"::text
@@ -18,6 +20,7 @@ ALTER TABLE "Project" ALTER COLUMN "status" SET DEFAULT 'following';
 
 -- Company.status: target / following / won / lost，脏值归 'target'
 CREATE TYPE "CompanyStatus" AS ENUM ('target', 'following', 'won', 'lost');
+ALTER TABLE "Company" ALTER COLUMN "status" DROP DEFAULT;
 ALTER TABLE "Company" ALTER COLUMN "status" TYPE "CompanyStatus" USING (
   CASE
     WHEN "status"::text IN ('target', 'following', 'won', 'lost') THEN "status"::text
