@@ -10,7 +10,6 @@ import Dashboard from './routes/dashboard'
 import Alerts from './routes/alerts'
 import Leads from './routes/leads'
 import Projects from './routes/projects'
-import Pipeline from './routes/pipeline'
 import Visits from './routes/visits'
 import Confirmations from './routes/confirmations'
 import TeamRanking from './routes/team-ranking'
@@ -60,7 +59,8 @@ function Layout() {
             <Route path="/alerts" element={<Alerts />} />
             <Route path="/leads" element={<RequireRole roles={SALES_TEAM}><Leads /></RequireRole>} />
             <Route path="/projects" element={<RequireRole roles={SALES_TEAM}><Projects /></RequireRole>} />
-            <Route path="/pipeline" element={<RequireRole roles={SALES_TEAM}><Pipeline /></RequireRole>} />
+            {/* ADR-0003 决策⑩：pipeline 页废除，漏斗视图并入商机推进工作台 */}
+            <Route path="/pipeline" element={<Navigate to="/projects" replace />} />
             <Route path="/visits" element={<RequireRole roles={SALES_TEAM}><Visits /></RequireRole>} />
             <Route path="/confirmations" element={<RequireRole roles={SALES_TEAM}><Confirmations /></RequireRole>} />
             <Route path="/team-ranking" element={<RequireRole roles={MANAGERS}><TeamRanking /></RequireRole>} />

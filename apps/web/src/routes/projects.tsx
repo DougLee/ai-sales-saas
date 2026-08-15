@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react'
-import { Plus, Loader2, Pencil, Trash2, ChevronRight, Calendar, Flag, CheckCircle2, AlertTriangle, Building2, Briefcase, Magnet } from 'lucide-react'
-import { useProjects, useProject, useDeleteProject, useUpdateProject, WAITING_STATUSES, type Project, type WaitingStatus } from '../hooks/use-projects.js'
+import { Plus, Loader2, Pencil, Trash2, ChevronRight, Calendar, Flag, CheckCircle2, AlertTriangle, Building2, Briefcase, Magnet, Search } from 'lucide-react'
+import { useProjects, useProject, useDeleteProject, useUpdateProject, useProjectMetrics, WAITING_STATUSES, type Project, type WaitingStatus } from '../hooks/use-projects.js'
 import { useDecisionChain, useUpdateDecisionChain } from '../hooks/use-decision-chain.js'
 import { DecisionChainMap } from '../components/projects/decision-chain-map.js'
 import WaitingSection from '../components/projects/waiting-section.js'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { useQueryClient } from '@tanstack/react-query'
 import { entityRouteTo } from '../lib/entity-links.js'
+import { useDebouncedValue } from '../hooks/use-debounced-value.js'
 import AiEntryButton from '../components/ai/ai-entry-button.js'
 import ProjectForm from '../components/forms/project-form.js'
 import VisitForm from '../components/forms/visit-form.js'
@@ -185,13 +187,21 @@ function checkGateCompletion(project: Project): { completed: boolean; missing: s
 
 export default function Projects() {
   const [tab, setTab] = useState('全部')
-  const [viewMode, setViewMode] = useState<'list' | 'board'>('board')
+  const [viewMode, setViewMode] = useState<'list' | 'board' | 'funnel'>('board')
+  const [collapsed, setCollapsed] = useState(false) // 决策⑧：9 列横滚 / 三阶段折叠切换
+  const [search, setSearch] = useState('')
+  const debouncedSearch = useDebouncedValue(search)
+  const [healthFilter, setHealthFilter] = useState('')
+  const [onlyStale, setOnlyStale] = useState(false)
+  const [onlyWaiting, setOnlyWaiting] = useState(false)
+  const [onlyIllusion, setOnlyIllusion] = useState(false)
   const [open, setOpen] = useState(false)
   const [editingItem, setEditingItem] = useState<Partial<Project> | undefined>(undefined)
   const [detailId, setDetailId] = useState<string | undefined>(undefined)
   const [visitFormOpen, setVisitFormOpen] = useState(false)
   const [visitDetailId, setVisitDetailId] = useState<string | undefined>(undefined)
-  const { data, isLoading, error } = useProjects()
+  const { data, isLoading, error } = useProjects({ search: debouncedSearch || undefined })
+  const { data: metrics } = useProjectMetrics()
   const del = useDeleteProject()
   const update = useUpdateProject()
   const confirmDialog = useConfirmDialog()
@@ -284,24 +294,39 @@ export default function Projects() {
   }
 
   const filteredItems = data?.items.filter((p) => {
-    if (tab === '全部') return true
-    if (tab === '跟进中') return !p.closedAt
-    if (tab === '已签约') return p.closedAt && !p.lostInfo
-    if (tab === '已流失') return p.lostInfo
+    if (tab === '跟进中' && p.closedAt) return false
+    if (tab === '已签约' && !(p.closedAt && !p.lostInfo)) return false
+    if (tab === '已流失' && !p.lostInfo) return false
+    // 推导筛选（ADR-0003）：停滞/等待/幻觉分家
+    const d = p.derivation
+    if (onlyStale && !(d && d.staleDays > 0 && !d.waiting)) return false
+    if (onlyWaiting && !d?.waiting) return false
+    if (onlyIllusion && !d?.illusion) return false
+    if (healthFilter === 'low' && (p.healthScore ?? 100) >= 40) return false
+    if (healthFilter === 'mid' && ((p.healthScore ?? 100) < 40 || (p.healthScore ?? 0) >= 70)) return false
+    if (healthFilter === 'high' && (p.healthScore ?? 0) < 70) return false
     return true
   }) || []
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold text-text-primary">商机管理</h2>
+        <div className="flex items-center gap-3">
+          <h2 className="text-xl font-semibold text-text-primary">商机推进</h2>
+          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">L2 · 立项推进层</span>
+        </div>
         <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 rounded-lg border border-border bg-surface-elevated p-1">
+            <button onClick={() => setViewMode('board')} className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${viewMode === 'board' ? 'bg-primary text-white' : 'text-text-secondary hover:text-text-primary'}`}>看板</button>
+            <button onClick={() => setViewMode('list')} className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${viewMode === 'list' ? 'bg-primary text-white' : 'text-text-secondary hover:text-text-primary'}`}>列表</button>
+            <button onClick={() => setViewMode('funnel')} className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${viewMode === 'funnel' ? 'bg-primary text-white' : 'text-text-secondary hover:text-text-primary'}`}>漏斗</button>
+          </div>
           <button
             onClick={() => navigate('/leads')}
             className="flex items-center gap-1.5 rounded-xl border border-border bg-surface px-4 py-2 text-sm text-text-secondary transition-colors hover:border-primary/40 hover:text-primary"
             title="商机由满足转化条件的线索生成，不支持直接新建"
           >
-            <Magnet size={15} /> 商机由线索转化，去线索页创建
+            <Magnet size={15} /> 商机由线索转化
           </button>
           <AiEntryButton
             prompt="帮我看看当前商机 Pipeline，哪些需要优先推进"
@@ -311,6 +336,71 @@ export default function Projects() {
           />
         </div>
       </div>
+
+      {/* 指标条六格（脱水是灵魂，C 位黄卡） */}
+      {metrics && (
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
+          <div className="rounded-xl border border-border bg-surface p-3">
+            <p className="text-xl font-bold text-text-primary">{metrics.active}</p>
+            <p className="mt-0.5 text-xs text-text-secondary">在途商机</p>
+          </div>
+          <div className="rounded-xl border border-border bg-surface p-3">
+            <p className="text-xl font-bold text-text-primary">¥{metrics.nominalAmount}<span className="text-xs font-normal">万</span></p>
+            <p className="mt-0.5 text-xs text-text-secondary">名义管线金额</p>
+          </div>
+          <div className="rounded-xl border border-warning/40 bg-warning/5 p-3">
+            <p className="text-xl font-bold text-warning">¥{metrics.dehydratedAmount}<span className="text-xs font-normal">万</span></p>
+            <p className="mt-0.5 text-[11px] font-semibold text-warning">脱水率 {metrics.dehydrationRate}%</p>
+            <p className="text-[11px] text-text-tertiary">AI 脱水后真实可预测</p>
+          </div>
+          <div className="rounded-xl border border-border bg-surface p-3">
+            <p className={`text-xl font-bold ${metrics.stale > 0 ? 'text-danger' : 'text-text-primary'}`}>{metrics.stale}</p>
+            <p className="mt-0.5 text-xs text-text-secondary">停滞中（超阈值未推进）</p>
+          </div>
+          <div className="rounded-xl border border-border bg-surface p-3">
+            <p className="text-xl font-bold text-primary">{metrics.waitingCount}</p>
+            <p className="mt-0.5 text-xs text-text-secondary">合理等待（招标/预算/审批）</p>
+          </div>
+          <div className="rounded-xl border border-border bg-surface p-3">
+            <p className="text-xl font-bold text-success">{metrics.conversionRate3}%</p>
+            <p className="mt-0.5 text-xs text-text-secondary">转化率③（商机→赢单，季度）</p>
+          </div>
+        </div>
+      )}
+
+      {/* 筛选栏 */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative min-w-[200px] flex-1">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="搜索商机 / 客户"
+            className="h-9 w-full rounded-lg border border-border bg-surface pl-9 pr-3 text-sm text-text-primary outline-none placeholder:text-text-tertiary focus:border-primary"
+          />
+        </div>
+        <select value={healthFilter} onChange={(e) => setHealthFilter(e.target.value)} className="h-9 rounded-lg border border-border bg-surface px-2 text-xs text-text-secondary outline-none focus:border-primary cursor-pointer" title="健康度">
+          <option value="">健康度：全部</option>
+          <option value="high">≥70 健康</option>
+          <option value="mid">40-70 观察</option>
+          <option value="low">&lt;40 高危</option>
+        </select>
+        {([
+          { on: onlyStale, set: setOnlyStale, label: '只看停滞', cls: 'border-danger/40 bg-danger/10 text-danger' },
+          { on: onlyWaiting, set: setOnlyWaiting, label: '只看等待', cls: 'border-primary/40 bg-primary/10 text-primary' },
+          { on: onlyIllusion, set: setOnlyIllusion, label: '疑似幻觉', cls: 'border-danger/40 bg-danger/10 text-danger' },
+        ] as const).map((c) => (
+          <button
+            key={c.label}
+            onClick={() => c.set(!c.on)}
+            className={`rounded-full border px-3 py-1 text-xs transition-colors ${c.on ? `${c.cls} font-semibold` : 'border-border bg-surface text-text-tertiary hover:text-text-secondary'}`}
+          >
+            {c.label}
+          </button>
+        ))}
+      </div>
+
       <div className="rounded-2xl border border-border bg-surface">
         <div className="flex items-center justify-between border-b border-border px-6 py-4">
           <div className="flex items-center gap-6">
@@ -326,28 +416,15 @@ export default function Projects() {
               </button>
             ))}
           </div>
-          <div className="flex items-center gap-1 rounded-lg border border-border bg-surface-elevated p-1">
+          {viewMode === 'board' && (
             <button
-              onClick={() => setViewMode('board')}
-              className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
-                viewMode === 'board'
-                  ? 'bg-primary text-white'
-                  : 'text-text-secondary hover:text-text-primary'
-              }`}
+              onClick={() => setCollapsed((v) => !v)}
+              className="rounded-lg border border-border px-2.5 py-1 text-xs text-text-secondary transition-colors hover:border-primary/40 hover:text-primary"
+              title="9 列横滚 / 三阶段折叠切换（决策⑧）"
             >
-              看板
+              {collapsed ? '展开 9 列' : '折叠为三阶段'}
             </button>
-            <button
-              onClick={() => setViewMode('list')}
-              className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
-                viewMode === 'list'
-                  ? 'bg-primary text-white'
-                  : 'text-text-secondary hover:text-text-primary'
-              }`}
-            >
-              列表
-            </button>
-          </div>
+          )}
         </div>
 
         {isLoading && <LoadingState />}
@@ -375,7 +452,12 @@ export default function Projects() {
             projects={filteredItems}
             onSelect={(p) => setDetailId(p.id)}
             onAdvance={handleAdvanceMilestone}
+            collapsed={collapsed}
           />
+        )}
+
+        {!isLoading && !error && filteredItems.length > 0 && viewMode === 'funnel' && (
+          <ProjectFunnel projects={filteredItems} />
         )}
 
         {!isLoading && !error && filteredItems.length > 0 && viewMode === 'list' && (
@@ -383,7 +465,12 @@ export default function Projects() {
             {filteredItems.map((project) => (
               <div key={project.id} className="flex items-center justify-between px-6 py-4 hover:bg-surface-elevated/50 transition-colors cursor-pointer" onClick={() => setDetailId(project.id)}>
                 <div>
-                  <p className="font-medium text-text-primary">{project.name}</p>
+                  <p className="font-medium text-text-primary">
+                    {project.name}
+                    {project.derivation?.illusion && (
+                      <span className="ml-1.5 rounded-md border border-danger/40 bg-danger/5 px-1 text-[10px] font-medium text-danger">疑似幻觉</span>
+                    )}
+                  </p>
                   <p className="text-sm text-text-secondary">
                     {project.company?.name ? (
                       <button
@@ -393,6 +480,10 @@ export default function Projects() {
                         {project.company.name}
                       </button>
                     ) : '无关联客户'} · {milestoneLabels[project.milestone] ?? '未知阶段'}
+                    {project.derivation?.staleDays ? <span className="ml-2 text-danger">停滞 {project.derivation.staleDays} 天</span> : null}
+                    {project.derivation?.nextAction && (
+                      <span className="ml-2 text-text-tertiary">▶ {project.derivation.nextAction.title}</span>
+                    )}
                   </p>
                 </div>
                 <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
@@ -440,7 +531,24 @@ export default function Projects() {
             {/* Header */}
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0 flex-1">
-                <h3 className="text-lg font-semibold text-text-primary">{detailItem.name}</h3>
+                <div className="flex items-center gap-1 text-[11px] text-text-tertiary">
+                  商机推进 <ChevronRight size={10} /> M{detailItem.milestone} {milestoneLabels[detailItem.milestone]}
+                </div>
+                <h3 className="flex flex-wrap items-center gap-1.5 text-lg font-semibold text-text-primary">
+                  {detailItem.name}
+                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">L2 · 商机</span>
+                  {detailItem.sourceLeadId && detailItem.milestone > 0 && (
+                    <span className="rounded-full bg-success/10 px-2 py-0.5 text-[10px] font-semibold text-success">↗ 线索转化定级落位</span>
+                  )}
+                  {detailItem.healthScore != null && (
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                      detailItem.healthScore >= 70 ? 'bg-success/10 text-success' : detailItem.healthScore >= 40 ? 'bg-warning/10 text-warning' : 'bg-danger/10 text-danger'
+                    }`}>健康 {detailItem.healthScore}</span>
+                  )}
+                  {detailItem.derivation?.illusion && (
+                    <span className="rounded-full border border-dashed border-danger px-2 py-0.5 text-[10px] font-semibold text-danger">疑似幻觉</span>
+                  )}
+                </h3>
                 <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-text-secondary">
                   {detailItem.company?.name && (
                     <button
@@ -474,45 +582,50 @@ export default function Projects() {
             {/* 等待状态（V6.1 §7.2：流程性等待不计停滞） */}
             <WaitingSection projectId={detailItem.id} />
 
-            {/* Key metrics */}
-            <div className="grid grid-cols-3 gap-3">
-              {detailItem.amount != null && (
-                <div className="rounded-xl border border-border bg-background p-3">
-                  <p className="text-xs text-text-tertiary">预估金额</p>
-                  <p className="mt-1 text-xl font-semibold text-primary">{detailItem.amount} 万</p>
-                </div>
-              )}
-              {detailItem.healthScore != null && (
-                <div className="rounded-xl border border-border bg-background p-3">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs text-text-tertiary">健康度</p>
-                    <span className={`text-xs font-medium ${
-                      detailItem.healthScore >= 60 ? 'text-success' :
-                      detailItem.healthScore >= 40 ? 'text-warning' :
-                      'text-danger'
-                    }`}>{detailItem.healthScore}分</span>
+            {/* 真假条五卡（ADR-0003：这单值多少/扎不扎实/动不动） */}
+            {(() => {
+              const d = detailItem.derivation
+              const daysSince = d ? Math.floor((Date.now() - new Date(detailItem.updatedAt).getTime()) / 86400000) : 0
+              const coverage = d ? Math.min(100, Math.round((d.evidenceCount / (detailItem.milestone + 1)) * 100)) : 0
+              return (
+                <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-5">
+                  <div className="rounded-xl border border-border bg-background p-3">
+                    <p className="text-lg font-bold text-text-primary">¥{detailItem.amount ?? '-'}<span className="text-xs font-normal">万</span></p>
+                    <p className="mt-0.5 text-[11px] text-text-tertiary">预估金额</p>
                   </div>
-                  <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-border">
-                    <div
-                      className={`h-full rounded-full transition-all ${
-                        detailItem.healthScore >= 60 ? 'bg-success' :
-                        detailItem.healthScore >= 40 ? 'bg-warning' :
-                        'bg-danger'
-                      }`}
-                      style={{ width: `${detailItem.healthScore}%` }}
-                    />
+                  <div className="rounded-xl border border-border bg-background p-3">
+                    <p className={`text-lg font-bold ${
+                      (detailItem.healthScore ?? 0) >= 70 ? 'text-success' : (detailItem.healthScore ?? 0) >= 40 ? 'text-warning' : 'text-danger'
+                    }`}>{detailItem.healthScore ?? '-'}</p>
+                    <p className="mt-0.5 text-[11px] text-text-tertiary">健康度（右栏 AI 拆解）</p>
+                  </div>
+                  <div className={`rounded-xl border p-3 ${coverage >= 60 ? 'border-border bg-background' : 'border-warning/40 bg-warning/5'}`}>
+                    <p className={`text-lg font-bold ${coverage >= 60 ? 'text-text-primary' : 'text-warning'}`}>{d?.evidenceCount ?? 0}<span className="text-xs font-normal">条</span></p>
+                    <div className="mt-1 h-1 overflow-hidden rounded-full bg-border">
+                      <div className={`h-full rounded-full ${coverage >= 60 ? 'bg-success' : 'bg-warning'}`} style={{ width: `${coverage}%` }} />
+                    </div>
+                    <p className="mt-0.5 text-[11px] text-text-tertiary">证据链 · 脱水校验覆盖 {coverage}%</p>
+                  </div>
+                  <div className="rounded-xl border border-border bg-background p-3">
+                    <p className="text-lg font-bold text-text-primary">{d?.decisionChainCount ?? 0}<span className="text-xs font-normal">人</span></p>
+                    <p className="mt-0.5 text-[11px] text-text-tertiary">决策链（含决策者/切入者）</p>
+                  </div>
+                  <div className="rounded-xl border border-border bg-background p-3">
+                    {d?.waiting ? (
+                      <p className="text-lg font-bold text-primary">等待中</p>
+                    ) : d && d.staleDays > 0 ? (
+                      <p className="text-lg font-bold text-danger">停滞 {d.staleDays} 天</p>
+                    ) : (
+                      <p className="text-lg font-bold text-success">活跃</p>
+                    )}
+                    <p className="mt-0.5 text-[11px] text-text-tertiary">
+                      {daysSince > 0 ? `${daysSince} 天前有推进` : '今天有推进'}
+                      {d?.nextAction ? ` · ▶ ${d.nextAction.title}` : ''}
+                    </p>
                   </div>
                 </div>
-              )}
-              {(detailItem.nextFollowUp || detailItem.lastVisitTime) && (
-                <div className="rounded-xl border border-border bg-background p-3">
-                  <p className="text-xs text-text-tertiary">{detailItem.nextFollowUp ? '下次跟进' : '上次拜访'}</p>
-                  <p className="mt-1 text-sm font-medium text-text-primary">
-                    {new Date(detailItem.nextFollowUp || detailItem.lastVisitTime || '').toLocaleDateString('zh-CN')}
-                  </p>
-                </div>
-              )}
-            </div>
+              )
+            })()}
 
             {/* Two-column layout */}
             <div className="grid grid-cols-5 gap-5">
@@ -537,20 +650,32 @@ export default function Projects() {
                   <div className="relative mt-4">
                     <div className="absolute left-0 top-[11px] h-0.5 w-full bg-border" />
                     <div className="relative flex justify-between">
-                      {milestoneLabels.map((label, i) => (
-                        <div key={i} className="flex flex-col items-center gap-1.5" title={label}>
-                          <div className={`relative z-10 flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold text-white ${
-                            i <= detailItem.milestone ? milestoneColors[i] : 'bg-border'
-                          }`}>
-                            {i < detailItem.milestone ? <CheckCircle2 size={12} /> : (i + 1)}
+                      {milestoneLabels.map((label, i) => {
+                        const curGate = i === detailItem.milestone ? checkGateCompletion(detailItem) : null
+                        return (
+                          <div key={i} className="flex flex-col items-center gap-1.5" title={label}>
+                            <div className={`relative z-10 flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold text-white ${
+                              i <= detailItem.milestone ? milestoneColors[i] : 'bg-border'
+                            }`}>
+                              {i < detailItem.milestone ? <CheckCircle2 size={12} /> : (i + 1)}
+                            </div>
+                            <span className={`text-center text-[10px] leading-tight ${
+                              i === detailItem.milestone ? 'font-medium text-primary' : 'text-text-tertiary'
+                            }`}>
+                              {i === detailItem.milestone ? label : `M${i}`}
+                            </span>
+                            {/* 证据锚点（ADR-0003）：已完成 ✓ 锚定 / 当前步显示缺口 */}
+                            <span className={`text-[9px] leading-tight ${
+                              i < detailItem.milestone ? 'text-success' : i === detailItem.milestone ? 'text-primary' : 'text-text-tertiary/60'
+                            }`}>
+                              {i < detailItem.milestone ? '✓ 锚定'
+                                : i === detailItem.milestone
+                                  ? (curGate?.completed ? '◉ 可推进' : `◉ 缺${curGate?.missing.length ?? 0}项`)
+                                  : '○'}
+                            </span>
                           </div>
-                          <span className={`text-center text-[10px] leading-tight ${
-                            i === detailItem.milestone ? 'font-medium text-primary' : 'text-text-tertiary'
-                          }`}>
-                            {i === detailItem.milestone ? label : `M${i}`}
-                          </span>
-                        </div>
-                      ))}
+                        )
+                      })}
                     </div>
                   </div>
                 </div>
@@ -622,8 +747,46 @@ export default function Projects() {
                 <DecisionChainSection projectId={detailItem.id} companyId={detailItem.company?.id} companyName={detailItem.company?.name} />
               </div>
 
-              {/* Right: timeline + visits + tasks */}
+              {/* Right: AI 作战室 + timeline + visits + tasks */}
               <div className="col-span-2 space-y-5">
+                {/* AI 作战室（设计稿 20260813）：健康度拆解 + 下一步建议 */}
+                <div className="rounded-xl border border-primary/20 bg-gradient-to-b from-primary/5 to-transparent p-4">
+                  <div className="mb-2 flex items-center justify-between">
+                    <h4 className="text-sm font-medium text-primary">AI 作战室</h4>
+                    <AiEntryButton
+                      prompt={`商机「${detailItem.name}」当前 ${milestoneLabels[detailItem.milestone]}，健康度 ${detailItem.healthScore ?? '未知'}，请给我本阶段的作战建议：下一步动作、风险点、话术要点`}
+                      label="问小销"
+                      variant="primary"
+                      entityType="project"
+                      entityId={detailItem.id}
+                    />
+                  </div>
+                  {detailItem.healthRadar && Array.isArray(detailItem.healthRadar) && detailItem.healthRadar.length > 0 && (
+                    <div className="space-y-1.5">
+                      {detailItem.healthRadar.map((dim: { name?: string; label?: string; score?: number }) => (
+                        <div key={dim.name || dim.label} className="flex items-center gap-2 text-xs">
+                          <span className="w-16 shrink-0 text-text-secondary">{dim.label || dim.name}</span>
+                          <span className="h-1.5 flex-1 overflow-hidden rounded bg-border">
+                            <i
+                              className={`block h-full rounded ${(dim.score ?? 0) >= 60 ? 'bg-success' : (dim.score ?? 0) >= 40 ? 'bg-warning' : 'bg-danger'}`}
+                              style={{ width: `${Math.min(dim.score ?? 0, 100)}%` }}
+                            />
+                          </span>
+                          <span className="w-8 shrink-0 text-right text-text-tertiary">{dim.score ?? '-'}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {(() => {
+                    const checklist = milestoneChecklists[detailItem.milestone]
+                    return checklist?.nextHint ? (
+                      <div className="mt-2.5 rounded-lg bg-surface p-2.5 text-xs text-text-secondary">
+                        <b className="text-primary">AI 建议：</b>{checklist.nextHint}
+                      </div>
+                    ) : null
+                  })()}
+                </div>
+
                 {/* 时间轴视图（V6.1 Phase 5：类型筛选 + 滚动加载，待确认事件不显示） */}
                 <TimelineView entityType="project" entityId={detailItem.id} title="项目时间轴" />
 
@@ -738,102 +901,221 @@ export default function Projects() {
   )
 }
 
+/** 三阶段着色（ADR-0003 / 决策⑧）：M0-2 蓝 / M3-5 紫 / M6-8 绿 */
+const PHASES = [
+  { name: '前期 · 信息收集', cls: 'border-t-primary', range: [0, 2], label: 'bg-primary' },
+  { name: '中期 · 方案推进', cls: 'border-t-[#7c3aed]', range: [3, 5], label: 'bg-[#7c3aed]' },
+  { name: '后期 · 成交落地', cls: 'border-t-success', range: [6, 8], label: 'bg-success' },
+] as const
+
+function phaseOf(milestone: number) {
+  return PHASES.find((p) => milestone >= p.range[0] && milestone <= p.range[1]) || PHASES[0]
+}
+
+/** 商机卡（设计稿：每张卡回答值多少钱/扎不扎实/动不动/下一步） */
+function ProjectCard({ project, onSelect, onAdvance }: {
+  project: Project
+  onSelect: (p: Project) => void
+  onAdvance: (p: Project) => void
+}) {
+  const gateStatus = checkGateCompletion(project)
+  const d = project.derivation
+  const hs = project.healthScore
+  return (
+    <div
+      onClick={() => onSelect(project)}
+      className={`cursor-pointer rounded-lg border bg-surface p-2.5 shadow-sm transition-all hover:border-primary/30 hover:shadow-glow ${
+        d?.illusion ? 'border-dashed border-danger/60 bg-danger/[0.02]'
+        : project.sourceLeadId && project.milestone > 0 ? 'border-l-[3px] border-l-success'
+        : 'border-border'
+      }`}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <p className="line-clamp-2 text-xs font-semibold text-text-primary">
+          {project.name}
+          {d?.illusion && <span className="ml-1 text-[10px] font-medium text-danger">疑似幻觉</span>}
+        </p>
+      </div>
+      <p className="mt-0.5 truncate text-[11px] text-text-tertiary">{project.company?.name || '无关联客户'}</p>
+      <div className="mt-1.5 flex items-center gap-1.5">
+        <span className="text-sm font-bold text-text-primary">¥{project.amount ?? '-'}</span>
+        {hs != null && (
+          <span className={`ml-auto rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+            hs >= 70 ? 'bg-success/10 text-success' : hs >= 40 ? 'bg-warning/10 text-warning' : 'bg-danger/10 text-danger'
+          }`}>
+            健康 {hs}
+          </span>
+        )}
+      </div>
+      <div className="mt-1.5 flex flex-wrap gap-1">
+        {d && d.decisionChainCount > 0 && <span className="rounded-md bg-surface-elevated px-1.5 py-0.5 text-[10px] text-text-tertiary">决策链 {d.decisionChainCount}人</span>}
+        {d && d.evidenceCount > 0 && <span className="rounded-md bg-surface-elevated px-1.5 py-0.5 text-[10px] text-text-tertiary">证据链 {d.evidenceCount}条</span>}
+        {d && d.waiting && project.waitingStatus && (
+          <span className="rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+            {WAITING_STATUSES[project.waitingStatus as WaitingStatus] || '等待中'}
+          </span>
+        )}
+        {d && !d.waiting && d.staleDays > 0 && (
+          <span className="rounded-md bg-danger/10 px-1.5 py-0.5 text-[10px] font-bold text-danger">停滞 {d.staleDays}天</span>
+        )}
+      </div>
+      {(d?.nextAction || d?.illusion) && (
+        <div className="mt-1.5 border-t border-dashed border-border pt-1.5 text-[11px]">
+          {d?.illusion ? (
+            <p className="text-danger">汇报无物理证据支撑，需实地核实</p>
+          ) : (
+            <p className="truncate text-text-secondary">
+              ▶ 下一步：<b className="text-primary">{d!.nextAction!.title}</b>
+              {d!.nextAction!.deadline && <span className="text-text-tertiary">（{new Date(d!.nextAction!.deadline).toLocaleDateString('zh-CN')} 截止）</span>}
+            </p>
+          )}
+        </div>
+      )}
+      {project.milestone < 8 && !project.closedAt && gateStatus.completed && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onAdvance(project) }}
+          className="mt-1.5 w-full rounded-md bg-primary py-0.5 text-[10px] font-medium text-white transition-colors hover:bg-primary/90"
+        >
+          推进 →
+        </button>
+      )}
+      {project.milestone < 8 && !project.closedAt && !gateStatus.completed && (
+        <div onClick={(e) => e.stopPropagation()}>
+          <AiEntryButton
+            prompt={`项目「${project.name}」当前在 ${milestoneLabels[project.milestone]} 阶段，推进条件不满足（缺少：${gateStatus.missing.join('、')}），请帮我分析下一步该怎么做`}
+            label="问小销：缺推进条件"
+            variant="ghost"
+            entityType="project"
+            entityId={project.id}
+          />
+        </div>
+      )}
+      {project.closedAt && !project.lostInfo && (
+        <p className="mt-1.5 rounded-md bg-success/10 py-0.5 text-center text-[10px] font-medium text-success">赢单</p>
+      )}
+    </div>
+  )
+}
+
 function ProjectBoard({
   projects,
   onSelect,
   onAdvance,
+  collapsed = false,
 }: {
   projects: Project[]
   onSelect: (project: Project) => void
   onAdvance: (project: Project) => void
+  collapsed?: boolean
 }) {
   const columns = milestoneLabels.map((label, milestone) => ({
     milestone,
     label,
     items: projects.filter((p) => p.milestone === milestone),
-    color: milestoneColors[milestone],
   }))
+
+  // 折叠模式（决策⑧）：三阶段三大列
+  if (collapsed) {
+    return (
+      <div className="grid grid-cols-1 gap-3 p-4 md:grid-cols-3">
+        {PHASES.map((phase) => {
+          const items = projects.filter((p) => p.milestone >= phase.range[0] && p.milestone <= phase.range[1])
+          const amountSum = items.reduce((s, p) => s + Number(p.amount ?? 0), 0)
+          return (
+            <div key={phase.name} className={`flex flex-col rounded-xl border border-border border-t-2 bg-surface-elevated/50 ${phase.cls}`}>
+              <div className="border-b border-border px-3 py-2">
+                <p className="text-xs font-bold text-text-primary">{phase.name}</p>
+                <p className="mt-0.5 flex justify-between text-[11px] text-text-tertiary">
+                  <span>M{phase.range[0]}-M{phase.range[1]} · {items.length} 单</span>
+                  <span>¥{amountSum}万</span>
+                </p>
+              </div>
+              <div className="flex-1 space-y-2 p-2">
+                {items.map((project) => (
+                  <ProjectCard key={project.id} project={project} onSelect={onSelect} onAdvance={onAdvance} />
+                ))}
+                {items.length === 0 && <p className="py-4 text-center text-[11px] text-text-tertiary">暂无商机</p>}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
 
   return (
     <div className="overflow-x-auto p-4">
-      <div className="flex min-w-[1024px] gap-3">
-        {columns.map((col) => (
-          <div key={col.milestone} className="flex w-60 flex-col rounded-xl border border-border bg-surface-elevated/50">
-            <div className="flex items-center gap-2 border-b border-border px-3 py-2">
-              <div className={`h-2 w-2 rounded-full ${col.color}`} />
-              <span className="text-xs font-medium text-text-secondary">{col.label}</span>
-              <span className="ml-auto rounded-full bg-surface px-1.5 py-0.5 text-[10px] text-text-tertiary">{col.items.length}</span>
+      <div className="flex min-w-[1180px] gap-2.5">
+        {columns.map((col) => {
+          const phase = phaseOf(col.milestone)
+          const amountSum = col.items.reduce((s, p) => s + Number(p.amount ?? 0), 0)
+          // 列脚瓶颈提示：单列 ≥3 单或该列全量停滞超 4 周
+          const bottleneck = col.items.length >= 3 ? `${milestoneLabels[col.milestone]} 堆积 ${col.items.length} 单，检查本环节是否卡脖子` : ''
+          return (
+            <div key={col.milestone} className={`flex w-56 flex-col rounded-xl border border-border border-t-2 bg-surface-elevated/50 ${phase.cls}`}>
+              <div className="border-b border-border px-2.5 py-2">
+                <div className="flex items-center gap-1.5">
+                  <span className={`rounded px-1 py-0.5 text-[10px] font-bold text-white ${phase.label}`}>M{col.milestone}</span>
+                  <span className="text-xs font-bold text-text-primary">{col.label}</span>
+                </div>
+                <p className="mt-0.5 flex justify-between text-[11px] text-text-tertiary">
+                  <span>{col.items.length} 单</span>
+                  <span>¥{amountSum}万</span>
+                </p>
+              </div>
+              <div className="flex-1 space-y-2 p-2">
+                {col.items.map((project) => (
+                  <ProjectCard key={project.id} project={project} onSelect={onSelect} onAdvance={onAdvance} />
+                ))}
+                {col.items.length === 0 && <p className="py-3 text-center text-[11px] text-text-tertiary">—</p>}
+              </div>
+              {bottleneck && (
+                <div className="border-t border-dashed border-border px-2.5 py-1.5 text-[10px] text-danger">{bottleneck}</div>
+              )}
             </div>
-            <div className="flex-1 space-y-2 p-2">
-              {col.items.map((project) => {
-                const gateStatus = checkGateCompletion(project)
-                return (
-                  <div
-                    key={project.id}
-                    onClick={() => onSelect(project)}
-                    className="cursor-pointer rounded-lg border border-border bg-surface p-3 shadow-sm transition-all hover:border-primary/30 hover:shadow-glow"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <p className="line-clamp-2 text-sm font-medium text-text-primary">{project.name}</p>
-                      {project.waitingStatus && (
-                        <span className="shrink-0 rounded-full bg-warning/10 px-1.5 py-0.5 text-[10px] font-medium text-warning">
-                          等待中
-                        </span>
-                      )}
-                      {project.healthScore != null && (
-                        <span className={`shrink-0 text-[10px] font-medium ${
-                          project.healthScore >= 60 ? 'text-success' :
-                          project.healthScore >= 40 ? 'text-warning' :
-                          'text-danger'
-                        }`}>
-                          {project.healthScore}分
-                        </span>
-                      )}
-                    </div>
-                    {project.company?.name && (
-                      <p className="mt-1 truncate text-xs text-text-tertiary">{project.company.name}</p>
-                    )}
-                    <div className="mt-2 flex items-center justify-between">
-                      <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
-                        project.urgency === 'CRITICAL' ? 'bg-danger/10 text-danger' :
-                        project.urgency === 'HIGH' ? 'bg-warning/10 text-warning' :
-                        project.urgency === 'MEDIUM' ? 'bg-primary/10 text-primary' :
-                        'bg-success/10 text-success'
-                      }`}>
-                        {urgencyMap[project.urgency]?.label || project.urgency}
-                      </span>
-                      {project.milestone < 8 && !project.closedAt && gateStatus.completed && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); onAdvance(project) }}
-                          className="rounded-md bg-primary px-1.5 py-0.5 text-[10px] font-medium text-white hover:bg-primary/90"
-                        >
-                          推进
-                        </button>
-                      )}
-                      {project.milestone < 8 && !project.closedAt && !gateStatus.completed && (
-                        <span onClick={(e) => e.stopPropagation()}>
-                          <AiEntryButton
-                            prompt={`项目「${project.name}」当前在 ${milestoneLabels[project.milestone]} 阶段，推进条件不满足（缺少：${gateStatus.missing.join('、')}），请帮我分析下一步该怎么做`}
-                            label="问小销"
-                            variant="primary"
-                            entityType="project"
-                            entityId={project.id}
-                          />
-                        </span>
-                      )}
-                    </div>
-                    {!gateStatus.completed && !project.closedAt && (
-                      <p className="mt-1.5 truncate text-[10px] text-warning">
-                        需：{gateStatus.missing.join('、')}
-                      </p>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
+      {/* 图例 */}
+      <div className="mt-2 flex flex-wrap gap-4 px-1 text-[11px] text-text-tertiary">
+        <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-primary align-middle" />M0-2 前期·信息收集</span>
+        <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-[#7c3aed] align-middle" />M3-5 中期·方案推进</span>
+        <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-success align-middle" />M6-8 后期·成交落地</span>
+        <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-danger/20 align-middle" />红标=停滞/幻觉</span>
+        <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-primary/20 align-middle" />紫/蓝标=合理等待（不计停滞）</span>
+      </div>
+    </div>
+  )
+}
+
+/** 漏斗视图（决策⑩：从 pipeline.tsx 并入） */
+function ProjectFunnel({ projects }: { projects: Project[] }) {
+  const data = milestoneLabels.map((label, milestone) => {
+    const items = projects.filter((p) => p.milestone === milestone)
+    return {
+      name: `M${milestone} ${label}`,
+      count: items.length,
+      amount: items.reduce((s, p) => s + Number(p.amount ?? 0), 0),
+    }
+  })
+  return (
+    <div className="p-6">
+      <p className="mb-4 text-sm text-text-secondary">各里程碑在途商机数量与金额分布（名义管线，未经脱水）</p>
+      <ResponsiveContainer width="100%" height={360}>
+        <BarChart data={data} margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border, #e2e8f0)" />
+          <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} angle={-30} textAnchor="end" height={70} />
+          <YAxis yAxisId="left" tick={{ fontSize: 11 }} allowDecimals={false} />
+          <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} />
+          <Tooltip
+            formatter={((value: unknown, name: unknown) => (name === '金额' ? [`${value} 万`, String(name)] : [String(value), String(name)])) as never}
+            contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }}
+          />
+          <Legend wrapperStyle={{ fontSize: 12 }} />
+          <Bar yAxisId="left" dataKey="count" name="商机数" fill="var(--color-primary, #2563eb)" radius={[4, 4, 0, 0]} />
+          <Bar yAxisId="right" dataKey="amount" name="金额" fill="#7c3aed" radius={[4, 4, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
     </div>
   )
 }

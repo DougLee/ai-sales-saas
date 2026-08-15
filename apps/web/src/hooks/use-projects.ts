@@ -96,6 +96,38 @@ export interface Project {
   }>
   createdAt: string
   updatedAt: string
+  /** 列表推导字段（后端 projects.derivation.service，ADR-0003） */
+  derivation?: ProjectDerivation
+  sourceLeadId?: string
+  /** 详情接口附加：健康度五维雷达（computeProjectHealthScore） */
+  healthRadar?: Array<{ name?: string; label?: string; score?: number }>
+}
+
+export interface ProjectDerivation {
+  staleDays: number
+  waiting: boolean
+  decisionChainCount: number
+  evidenceCount: number
+  nextAction: { title: string; deadline: string | null } | null
+  illusion: boolean
+  credibility: number
+}
+
+/** 商机指标条六格（L2 专属）：在途/名义/脱水+脱水率/停滞/等待/转化率③ */
+export function useProjectMetrics() {
+  return useQuery({
+    queryKey: ['project-metrics'],
+    queryFn: () =>
+      get<{
+        active: number
+        nominalAmount: number
+        dehydratedAmount: number
+        dehydrationRate: number
+        stale: number
+        waitingCount: number
+        conversionRate3: number
+      }>('/api/projects/metrics'),
+  })
 }
 
 export function useProjects(params?: { milestone?: number; urgency?: string; search?: string }) {
@@ -158,24 +190,5 @@ export function useProject(id?: string) {
     queryKey: ['project', id],
     queryFn: () => get<Project>(`/api/projects/${id}`),
     enabled: !!id,
-  })
-}
-
-export interface PipelineColumn {
-  milestone: number
-  name: string
-  items: Project[]
-}
-
-export interface PipelineData {
-  columns: PipelineColumn[]
-  total: number
-}
-
-export function usePipeline() {
-  return useQuery({
-    queryKey: ['projects', 'pipeline'],
-    queryFn: () => get<PipelineData>('/api/projects/pipeline'),
-    refetchInterval: 30_000,
   })
 }

@@ -10,7 +10,6 @@ const pageTitles: Record<string, string> = {
   '/': '工作台',
   '/leads': '线索管理',
   '/projects': '商机管理',
-  '/pipeline': '销售看板',
   '/visits': '拜访记录',
   '/confirmations': '待确认',
   '/team-ranking': '团队排名',
