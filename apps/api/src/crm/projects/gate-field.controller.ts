@@ -4,17 +4,22 @@ import { DEFAULT_MILESTONE_GATE_RULES } from '@ai-sales/shared'
 import { recordTimelineEvent } from '../../lib/timeline.js'
 import { ActivityEventType } from '../../lib/activity.js'
 import { canAccess } from '../../lib/data-scope.js'
+import {
+  FIELD_VERIFY_REQ,
+  SOURCE_KEY,
+  addSourceToMeta,
+  levelFromSources,
+  readFieldSources,
+  type GateFieldMeta,
+} from './verification-tiers.js'
 
 /**
- * 阶段档案字段的人工写入口（ADR-0004 决策 5/6）
+ * 阶段档案字段写入口（ADR-0004 决策 5/6 + ADR-0005 水位体系）
  *
- * - 人工编辑（source=manual）：AI 提取不是 gate 字段的唯一通路——人工值落库后，
- *   既有 auto-apply"只写字段为空"的规则天然保证 AI 不覆盖人工值
- * - manual-pass 单字段逃生门：信息天然不从拜访来的字段（中标公告/组织调研），
- *   理由必填、时间轴留痕；gate 校验对该字段放行
- *
- * 来源标记存储：project.evidence._gateFieldSource（path → 'manual' | 'manual-pass'）。
- * AI auto-apply 不写该映射——字段有值且无映射 = AI 提取产物（推断，无需改动 auto-apply）。
+ * - 人工编辑：level=manual（自述·未验证），材料到达后被印证或覆盖
+ * - manual-pass 豁免：映射 final 档（理由必填、时间轴留痕）
+ * - addSource / revokeSource：来源链累积与撤销（水位升降）
+ * - confirmDecision：decision 级字段由 cross 升 final（决策人坐实）
  */
 
 /** 允许人工直写值的字段（字符串形态；数组形态字段仅支持 manual-pass） */
@@ -27,7 +32,6 @@ const STRING_PATHS = new Set([
   'evidence.bidResult',
 ])
 
-/** 允许 manual-pass 的字段 = 全部 gate 路径（含数组形态的 painPoints / decisionMap.nodes） */
 const ALL_PATHS = new Set<string>()
 for (const rule of DEFAULT_MILESTONE_GATE_RULES) {
   for (const f of rule.requiredFields) {
@@ -35,15 +39,6 @@ for (const rule of DEFAULT_MILESTONE_GATE_RULES) {
     else for (const sub of f.rules) if ('path' in sub) ALL_PATHS.add(sub.path)
   }
 }
-
-/** 来源映射的存储位置（嵌在 evidence JSON 内，免 schema 迁移） */
-const SOURCE_KEY = '_gateFieldSource'
-
-const GateFieldBodySchema = z.union([
-  z.object({ path: z.string(), value: z.string().min(1) }),
-  z.object({ path: z.string(), manualPass: z.literal(true), reason: z.string().min(1) }),
-  z.object({ path: z.string(), manualPass: z.literal(false), reason: z.string().optional() }),
-])
 
 function sectionKeyOf(section: string): string {
   if (section === 'evidence') return 'evidence'
@@ -64,13 +59,26 @@ function fieldLabel(path: string): string {
   return map[path] ?? path
 }
 
+const GateFieldBodySchema = z.union([
+  // 人工录入
+  z.object({ path: z.string(), value: z.string().min(1) }),
+  // 豁免（ADR-0004）
+  z.object({ path: z.string(), manualPass: z.literal(true), reason: z.string().min(1) }),
+  z.object({ path: z.string(), manualPass: z.literal(false), reason: z.string().optional() }),
+  // 来源链（ADR-0005）
+  z.object({ path: z.string(), addSource: z.string().min(1) }),
+  z.object({ path: z.string(), revokeSource: z.string().min(1) }),
+  // 决策人坐实（ADR-0005）
+  z.object({ path: z.string(), confirmDecision: z.literal(true) }),
+])
+
 export async function updateGateField(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
   try {
     const prisma = req.tenantPrisma!
     const user = req.user as { id: string; tenantId: string; role: string }
     const parsed = GateFieldBodySchema.safeParse(req.body)
     if (!parsed.success) {
-      return reply.status(400).send({ success: false, error: '参数不合法：需 {path, value} 或 {path, manualPass: true, reason}' })
+      return reply.status(400).send({ success: false, error: '参数不合法：{path,value} / {path,manualPass,reason} / {path,addSource} / {path,revokeSource} / {path,confirmDecision}' })
     }
     const body = parsed.data
 
@@ -83,11 +91,16 @@ export async function updateGateField(req: FastifyRequest<{ Params: { id: string
       return reply.status(400).send({ success: false, error: `字段 ${body.path} 不在门禁白名单内` })
     }
 
-    // 来源映射（嵌 evidence JSON）
     const evidence = { ...((project.evidence as Record<string, unknown>) || {}) }
-    const sources = { ...((evidence[SOURCE_KEY] as Record<string, string>) || {}) }
+    const sources = readFieldSources(project.evidence as Record<string, unknown> | null)
     const data: Record<string, unknown> = {}
     const record = project as unknown as Record<string, unknown>
+
+    const setMeta = (path: string, meta: GateFieldMeta) => {
+      sources[path] = meta
+      evidence[SOURCE_KEY] = sources
+      data.evidence = evidence
+    }
 
     if ('value' in body) {
       if (!STRING_PATHS.has(body.path)) {
@@ -98,39 +111,71 @@ export async function updateGateField(req: FastifyRequest<{ Params: { id: string
       const sectionObj = { ...((record[sk] as Record<string, unknown>) || {}) }
       sectionObj[key] = body.value
       data[sk] = sectionObj
-      sources[body.path] = 'manual'
-    } else if (body.manualPass === true) {
+      // 手填 = 自述·未验证（ADR-0005）：清来源、降 manual
+      setMeta(body.path, { level: 'manual', sources: [] })
+    } else if ('manualPass' in body && body.manualPass === true) {
       if (!body.reason?.trim()) {
         return reply.status(400).send({ success: false, error: '标记达标必须填写理由（将记录到时间轴）' })
       }
-      sources[body.path] = 'manual-pass'
-    } else {
-      // manualPass=false：清除该字段的豁免/人工标记
+      setMeta(body.path, { level: 'final', sources: ['豁免'] })
+    } else if ('manualPass' in body && body.manualPass === false) {
       delete sources[body.path]
+      evidence[SOURCE_KEY] = sources
+      data.evidence = evidence
+    } else if ('addSource' in body) {
+      const existing = sources[body.path] ?? { level: 'manual' as const, sources: [] }
+      setMeta(body.path, addSourceToMeta(existing, body.addSource))
+    } else if ('revokeSource' in body) {
+      const existing = sources[body.path]
+      if (!existing || !existing.sources.includes(body.revokeSource)) {
+        return reply.status(400).send({ success: false, error: `来源「${body.revokeSource}」不存在` })
+      }
+      const remain = existing.sources.filter((s) => s !== body.revokeSource)
+      // 撤销来源 → 水位降级；final 只有豁免/决策人两类来源，撤销即退出 final
+      const level = levelFromSources('manual', remain, true)
+      setMeta(body.path, { level, sources: remain })
+    } else if ('confirmDecision' in body) {
+      if (FIELD_VERIFY_REQ[body.path] !== 'decision') {
+        return reply.status(400).send({ success: false, error: '仅 decision 级字段（方案/报价/决策链）支持决策人坐实' })
+      }
+      const existing = sources[body.path] ?? { level: 'manual' as const, sources: [] }
+      setMeta(body.path, { level: 'final', sources: [...new Set([...existing.sources, '决策人确认'])] })
     }
-
-    evidence[SOURCE_KEY] = sources
-    data.evidence = evidence
 
     await prisma.project.update({ where: { id: project.id }, data: data as never })
 
+    // 时间轴留痕（来源/水位变化也记，便于审计弱锚定历史）
+    const isLevelChange = 'addSource' in body || 'revokeSource' in body || 'confirmDecision' in body
     await recordTimelineEvent(prisma, {
       tenantId: user.tenantId,
       customerId: project.companyId || project.id,
       projectId: project.id,
-      eventType: 'value' in body ? ActivityEventType.PROJECT_UPDATED : ActivityEventType.MILESTONE_GATE_PASSED,
-      eventSubtype: 'value' in body ? '阶段档案-人工录入' : body.manualPass ? '阶段档案-标记达标' : '阶段档案-清除标记',
+      eventType: isLevelChange ? ActivityEventType.MILESTONE_GATE_PASSED : ActivityEventType.PROJECT_UPDATED,
+      eventSubtype: 'value' in body ? '阶段档案-人工录入'
+        : ('manualPass' in body && body.manualPass === true) ? '阶段档案-标记达标'
+        : ('manualPass' in body && body.manualPass === false) ? '阶段档案-清除标记'
+        : 'addSource' in body ? '阶段档案-来源累积'
+        : 'revokeSource' in body ? '阶段档案-来源撤销'
+        : '阶段档案-决策人坐实',
       eventData: {
         path: body.path,
         label: fieldLabel(body.path),
-        ...('value' in body ? { value: body.value } : { reason: body.reason }),
+        ...('value' in body ? { value: body.value } : {}),
+        ...('reason' in body && typeof body.reason === 'string' ? { reason: body.reason } : {}),
+        ...('addSource' in body ? { source: body.addSource } : {}),
+        ...('revokeSource' in body ? { source: body.revokeSource } : {}),
+        level: sources[body.path]?.level,
       },
       sourceType: 'user',
       sourceId: user.id,
-      sourceLabel: 'value' in body ? '人工录入门禁字段' : '单字段豁免（manual-pass）',
+      sourceLabel: 'value' in body ? '人工录入门禁字段'
+        : ('manualPass' in body && body.manualPass === true) ? '单字段豁免（manual-pass）'
+        : 'addSource' in body ? '材料来源累积（交叉验证）'
+        : 'revokeSource' in body ? '来源撤销（水位降级）'
+        : '决策人确认（坐实）',
     })
 
-    reply.send({ success: true })
+    reply.send({ success: true, data: { level: sources[body.path]?.level, sources: sources[body.path]?.sources } })
   } catch (err) {
     reply.status(400).send({ success: false, error: (err as Error).message })
   }

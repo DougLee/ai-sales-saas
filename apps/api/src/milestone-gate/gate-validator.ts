@@ -253,11 +253,12 @@ export async function validateMilestoneAdvance(
   const evidenceRecords = await loadEvidenceRecords(prisma, projectId)
   const missing: Array<{ path?: string; label: string }> = []
 
-  // ADR-0004 决策 6：manual-pass 豁免的字段跳过校验（来源映射存于 evidence._gateFieldSource）
+  // ADR-0004 决策 6 + ADR-0005：豁免（manual-pass→final）的字段跳过校验
   const evidenceJson = (projectData.evidence as Record<string, unknown> | null) || {}
+  const rawSources = (evidenceJson._gateFieldSource as Record<string, unknown>) || {}
   const manualPassed = new Set(
-    Object.entries((evidenceJson._gateFieldSource as Record<string, string>) || {})
-      .filter(([, source]) => source === 'manual-pass')
+    Object.entries(rawSources)
+      .filter(([, v]) => v === 'manual-pass' || (v && typeof v === 'object' && ((v as { level?: string }).level === 'final')))
       .map(([path]) => path),
   )
 

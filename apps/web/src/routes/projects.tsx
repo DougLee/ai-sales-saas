@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Plus, Loader2, Pencil, Trash2, ChevronLeft, ChevronRight, Calendar, Flag, CheckCircle2, AlertTriangle, Building2, Briefcase, Magnet, Search, ArrowUpRight, Check, Dot, Circle } from 'lucide-react'
+import { Plus, Loader2, Pencil, Trash2, ChevronLeft, ChevronRight, Calendar, Flag, AlertTriangle, Building2, Briefcase, Magnet, Search, ArrowUpRight, Check, Upload, Mic, Paperclip } from 'lucide-react'
 import { useProjects, useProject, useDeleteProject, useUpdateProject, useUpdateGateField, useProjectMetrics, WAITING_STATUSES, type Project, type WaitingStatus } from '../hooks/use-projects.js'
 import { useDecisionChain, useUpdateDecisionChain } from '../hooks/use-decision-chain.js'
 import { DecisionChainMap } from '../components/projects/decision-chain-map.js'
@@ -24,11 +24,6 @@ import { TimelineView } from '../components/timeline/timeline-view.js'
 const milestoneLabels = [
   '初识客户', '明确痛点', '明确需求', '明确经费',
   '明确方案', '明确价格', '协助采购', '招标确认', '投标中标',
-]
-
-const milestoneColors = [
-  'bg-blue-500', 'bg-indigo-500', 'bg-violet-500', 'bg-purple-500',
-  'bg-fuchsia-500', 'bg-pink-500', 'bg-rose-500', 'bg-orange-500', 'bg-emerald-500',
 ]
 
 const urgencyMap: Record<string, { label: string; color: string }> = {
@@ -176,6 +171,50 @@ const MILESTONE_GATES: Record<number, { requiredFields: Array<{ path: string; la
       },
     ]),
   )
+
+/** ADR-0005：gate 字段口语化文案（设计稿 v2）与验证要求档位（镜像后端 verification-tiers） */
+const FIELD_COLLOQ: Record<string, { label: string; help: string; req: 'material' | 'cross' | 'decision' }> = {
+  'humanInfo.firstContact': { label: '怎么认识的', help: '首次接触方式', req: 'material' },
+  'humanInfo.painPoints': { label: '客户痛点', help: '至少 1 条，客户原话最佳', req: 'cross' },
+  'businessInfo.requirements': { label: '需求量化', help: '覆盖规模 / 时间 / 功能', req: 'cross' },
+  'financeInfo.budget': { label: '钱从哪来、多少', help: '预算来源与金额区间', req: 'cross' },
+  'businessInfo.solution': { label: '方案要点', help: '客户认可的方案方向', req: 'decision' },
+  'financeInfo.price': { label: '报价多少', help: '正式报价与依据', req: 'decision' },
+  'decisionMap.nodes': { label: '关键拍板人', help: '决策链人物 ≥1 人', req: 'decision' },
+  'evidence.bidResult': { label: '中标结果', help: '开标/评标结果', req: 'material' },
+}
+const REQ_NAME: Record<string, string> = { material: '需客观材料', cross: '需 ≥2 独立来源交叉', decision: '需决策人确认坐实' }
+const LEVEL_RANK: Record<string, number> = { manual: 0, single: 1, cross: 2, final: 3 }
+const REQ_LEVEL: Record<string, number> = { material: 1, cross: 2, decision: 3 }
+const LEVEL_META: Record<string, { text: string; cls: string }> = {
+  manual: { text: '自述·未验证', cls: 'bg-surface-elevated text-text-secondary' },
+  single: { text: '单源·待确认', cls: 'bg-warning/10 text-warning' },
+  cross: { text: '交叉验证', cls: 'bg-info/10 text-info' },
+  final: { text: '坐实', cls: 'bg-success/10 text-success' },
+}
+/** 三段式（ADR-0005 决策 4）：育单 M0-2 / 谈单 M3-5 / 成单 M6-8 */
+const SEGMENTS = [
+  { from: 0, to: 2, name: '育单期', tip: '育单 · 摸清底细', color: 'bg-primary', text: 'text-primary', bg: 'bg-primary' },
+  { from: 3, to: 5, name: '谈单期', tip: '谈单 · 拿下方案与价', color: 'bg-violet-600', text: 'text-violet-600', bg: 'bg-violet-600' },
+  { from: 6, to: 8, name: '成单期', tip: '成单 · 走完采购', color: 'bg-success', text: 'text-success', bg: 'bg-success' },
+]
+function segOf(m: number) {
+  return SEGMENTS.find((s) => m >= s.from && m <= s.to) ?? SEGMENTS[2]
+}
+/** 读取字段水位（兼容旧 string 结构） */
+function readFieldMetas(evidence: Record<string, unknown> | null | undefined): Record<string, { level: string; sources: string[] }> {
+  const raw = evidence?._gateFieldSource as Record<string, unknown> | undefined
+  if (!raw) return {}
+  const out: Record<string, { level: string; sources: string[] }> = {}
+  for (const [path, v] of Object.entries(raw)) {
+    if (typeof v === 'string') out[path] = { level: v === 'manual-pass' ? 'final' : 'manual', sources: v === 'manual-pass' ? ['豁免'] : [] }
+    else if (v && typeof v === 'object') {
+      const m = v as { level?: string; sources?: string[] }
+      out[path] = { level: m.level || 'manual', sources: Array.isArray(m.sources) ? m.sources : [] }
+    }
+  }
+  return out
+}
 
 function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
   return path.split('.').reduce((acc: unknown, key: string) => {
@@ -326,9 +365,17 @@ export default function Projects() {
     if (project.milestone >= 8) return
     const gateStatus = checkGateCompletion(project)
     if (!gateStatus.completed) return
+    // ADR-0005 决策 3：弱锚定警示（字段有值但水位不足 → 放行但提醒）
+    const metas = readFieldMetas(project.evidence)
+    const gate = MILESTONE_GATES[project.milestone]
+    const below = (gate?.requiredFields ?? []).filter((f) => {
+      const meta = metas[f.path]
+      return (meta ? LEVEL_RANK[meta.level] ?? 0 : 0) < REQ_LEVEL[FIELD_COLLOQ[f.path]?.req ?? 'material']
+    })
+    const weak = below.length > 0
     if (!(await confirmDialog.confirm({
-      title: '推进里程碑',
-      description: `确定将「${project.name}」从「${milestoneLabels[project.milestone]}」推进到「${milestoneLabels[project.milestone + 1]}」吗？`,
+      title: weak ? '弱锚定推进' : '推进里程碑',
+      description: `确定将「${project.name}」从「${milestoneLabels[project.milestone]}」推进到「${milestoneLabels[project.milestone + 1]}」吗？` + (weak ? `\n\n⚠ ${below.map((b) => FIELD_COLLOQ[b.path]?.label ?? b.label).join('、')} 未达验证水位，本次推进将标记为弱锚定——后续材料到达可补强。` : ''),
       confirmLabel: '推进',
     }))) return
     update.mutate({ id: project.id, data: { milestone: project.milestone + 1 } })
@@ -787,98 +834,190 @@ export default function Projects() {
             <div className="grid grid-cols-5 gap-5">
               {/* Left: progress + checklist + decision chain */}
               <div className="col-span-3 space-y-5">
-                {/* Milestone Timeline */}
+                {/* 推进卡 v2（ADR-0005）：段形进度条 + 统一材料入口 + 水位推进 */}
                 <div className="rounded-xl border border-border bg-background p-4">
-                  <div className="mb-3 flex items-center justify-between">
-                    <h4 className="text-sm font-medium text-text-secondary">里程碑进度</h4>
-                    {detailItem.milestone < 8 && !detailItem.closedAt && (
-                      <div className="flex items-center gap-1">
-                        {detailItem.milestone > 0 && (
-                          <button
-                            onClick={() => setRollbackOpen((v) => !v)}
-                            disabled={update.isPending}
-                            className="flex items-center gap-1 rounded-lg border border-border px-2 py-1 text-xs text-text-secondary transition-colors hover:border-danger/40 hover:text-danger disabled:opacity-50"
-                            title="回退到上一里程碑（需填原因，留痕）"
-                          >
-                            <ChevronLeft size={12} /> 回退
-                          </button>
-                        )}
-                        <button
-                          onClick={() => handleAdvanceMilestone(detailItem)}
-                          disabled={update.isPending || !checkGateCompletion(detailItem).completed}
-                          className="flex items-center gap-1 rounded-lg bg-primary px-2.5 py-1 text-xs font-medium text-white hover:bg-primary/90 transition-colors disabled:opacity-50"
-                          title={checkGateCompletion(detailItem).completed ? '' : `需先录入：${checkGateCompletion(detailItem).missing.join('、')}`}
-                        >
-                          {update.isPending ? <Loader2 size={12} className="animate-spin" /> : <ChevronRight size={12} />}
-                          推进
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                  <div className="relative mt-4">
-                    <div className="absolute left-0 top-[11px] h-0.5 w-full bg-border" />
-                    <div className="relative flex justify-between">
-                      {milestoneLabels.map((label, i) => {
-                        const curGate = i === detailItem.milestone ? checkGateCompletion(detailItem) : null
-                        return (
-                          <div key={i} className="flex flex-col items-center gap-1.5" title={label}>
-                            <div className={`relative z-10 flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-bold text-white ${
-                              i <= detailItem.milestone ? milestoneColors[i] : 'bg-border'
-                            }`}>
-                              {i < detailItem.milestone ? <CheckCircle2 size={12} /> : (i + 1)}
-                            </div>
-                            <span className={`text-center text-[11px] leading-tight ${
-                              i === detailItem.milestone ? 'font-medium text-primary' : 'text-text-tertiary'
-                            }`}>
-                              {i === detailItem.milestone ? label : `M${i}`}
-                            </span>
-                            {/* 证据锚点（ADR-0003）：已完成锚定 / 当前步缺口（审计 #18：9px 符号 → 11px SVG） */}
-                            <span className={`flex items-center gap-0.5 text-[11px] leading-tight ${
-                              i < detailItem.milestone ? 'text-success' : i === detailItem.milestone ? 'text-primary' : 'text-text-tertiary/60'
-                            }`}>
-                              {i < detailItem.milestone
-                                ? <><Check size={10} /> 锚定</>
-                                : i === detailItem.milestone
-                                  ? <><Dot size={12} />{curGate?.completed ? '可推进' : `缺${curGate?.missing.length ?? 0}项`}</>
-                                  : <Circle size={8} />}
-                            </span>
+                  {(() => {
+                    const m = detailItem.milestone
+                    const seg = segOf(m)
+                    const anchors = (detailItem.evidence?._anchors as Record<string, string>) || {}
+                    const gate = MILESTONE_GATES[m]
+                    const metas = readFieldMetas(detailItem.evidence)
+                    const gateStatus = checkGateCompletion(detailItem)
+                    // 水位：字段有值但 level < 要求 → 未达标数
+                    const belowReq = (gate?.requiredFields ?? []).filter((f) => {
+                      const meta = metas[f.path]
+                      const lv = meta ? LEVEL_RANK[meta.level] ?? 0 : 0
+                      return lv < REQ_LEVEL[FIELD_COLLOQ[f.path]?.req ?? 'material']
+                    })
+                    return (
+                      <>
+                        {/* 推进卡头：M 色块 + 当前/下一格 + 段 tag */}
+                        <div className="flex items-center gap-3">
+                          <div className={`flex h-11 w-11 flex-col items-center justify-center rounded-xl text-white ${seg.bg}`}>
+                            <b className="text-base leading-none">M{m}</b>
+                            <i className="mt-0.5 text-[9px] not-italic opacity-85">当前</i>
                           </div>
-                        )
-                      })}
-                    </div>
-                  </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-[15px] font-bold text-text-primary">{milestoneLabels[m]}</p>
+                            <p className="text-xs text-text-tertiary">
+                              {m < 8 ? `下一格：M${m + 1} ${milestoneLabels[m + 1]}` : '终点 · 转入客户成功'}
+                            </p>
+                          </div>
+                          <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${seg.name === '育单期' ? 'bg-primary/10 text-primary' : seg.name === '谈单期' ? 'bg-violet-600/10 text-violet-600' : 'bg-success/10 text-success'}`}>
+                            {seg.tip}
+                          </span>
+                        </div>
 
-                  {/* 回退原因内联表单（ADR-0004 决策 4） */}
-                  {rollbackOpen && detailItem.milestone > 0 && (
-                    <div className="mt-3 space-y-2 rounded-lg border border-danger/20 bg-danger/5 p-3">
-                      <p className="text-xs text-danger">
-                        回退 M{detailItem.milestone} → M{detailItem.milestone - 1}（必填原因，将记录到时间轴）
-                      </p>
-                      <textarea
-                        value={rollbackReason}
-                        onChange={(e) => setRollbackReason(e.target.value)}
-                        rows={2}
-                        placeholder="如：客户需求范围变更，需重新确认需求指标"
-                        aria-label="回退原因"
-                        className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary outline-none focus:border-danger"
-                      />
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => { setRollbackOpen(false); setRollbackReason('') }}
-                          className="flex-1 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs text-text-secondary hover:bg-surface-elevated"
-                        >
-                          取消
-                        </button>
-                        <button
-                          onClick={() => handleRollbackSubmit(detailItem)}
-                          disabled={update.isPending || !rollbackReason.trim()}
-                          className="flex-1 rounded-lg bg-danger px-3 py-1.5 text-xs font-medium text-white hover:bg-danger/90 disabled:opacity-50"
-                        >
-                          {update.isPending ? '回退中...' : '确认回退'}
-                        </button>
-                      </div>
-                    </div>
-                  )}
+                        {/* 段形进度条 + ticks（强弱锚定） */}
+                        <div className="mt-4">
+                          <div className="flex h-2 gap-0.5 overflow-hidden rounded-full">
+                            {SEGMENTS.flatMap((s) =>
+                              Array.from({ length: s.to - s.from + 1 }, (_, k) => {
+                                const idx = s.from + k
+                                return <div key={idx} className={`flex-1 rounded-sm ${idx <= m ? s.color : 'bg-border'}`} style={{ opacity: idx <= m ? 1 : 0.5 }} />
+                              }),
+                            )}
+                          </div>
+                          <div className="relative mt-2.5">
+                            <div className="absolute left-0 top-[9px] h-0.5 w-full bg-border" />
+                            <div className="relative flex justify-between">
+                              {milestoneLabels.map((label, i) => {
+                                const iseg = segOf(i)
+                                const anchor = anchors[i] || anchors[String(i)]
+                                return (
+                                  <div key={i} className="flex w-[11%] flex-col items-center gap-1" title={label}>
+                                    <div
+                                      className={`relative z-10 flex h-[18px] w-[18px] items-center justify-center rounded-full text-[9px] font-bold transition-all ${
+                                        i < m ? `${iseg.color} text-white`
+                                        : i === m ? `${iseg.color} scale-[1.15] text-white ring-4 ring-primary/15`
+                                        : 'border-[1.5px] border-border bg-surface-elevated text-text-tertiary'
+                                      }`}
+                                    >
+                                      {i < m ? <Check size={10} /> : i + 1}
+                                    </div>
+                                    <span className={`whitespace-nowrap text-[10px] ${i === m ? 'font-semibold text-text-primary' : 'text-text-tertiary'}`}>
+                                      {i === m ? label : `M${i}`}
+                                    </span>
+                                    {/* 锚定标记（ADR-0005 决策 3）：强/弱 */}
+                                    <span className="flex h-[10px] items-center text-[9px] leading-none">
+                                      {i < m && (anchor === 'strong' || anchor === 'weak') ? (
+                                        <span className={anchor === 'strong' ? 'text-success' : 'text-warning'} title={anchor === 'strong' ? '强锚定：全部字段达验证水位' : '弱锚定：含未验证信息，材料到达可补强'}>
+                                          ⚓ {anchor === 'strong' ? '强' : '弱'}
+                                        </span>
+                                      ) : null}
+                                    </span>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          </div>
+                          <div className="mt-1.5 flex border-t-2 border-transparent">
+                            {SEGMENTS.map((s) => (
+                              <span key={s.name} className="flex-1 pt-1.5 text-center text-[11px] font-semibold" style={{ width: `${((s.to - s.from + 1) / 9) * 100}%` }}>
+                                <span className={s.text}>{s.tip}</span>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* 统一材料提交区（v2 核心：一卡一入口） */}
+                        <div className="mt-4 rounded-[10px] border-[1.5px] border-dashed border-primary bg-primary/5 p-3">
+                          <p className="flex items-center gap-2 text-[13px] font-bold text-primary">
+                            <Upload size={14} /> 提交本次推进材料（唯一入口）
+                          </p>
+                          <p className="mt-0.5 text-[11px] text-text-secondary">
+                            拜访录音、方案文档、微信沟通截图——交上来就行，AI 提取当前阶段关键信息并自动验证
+                          </p>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <button
+                              onClick={() => setVisitFormOpen(true)}
+                              className="flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-primary-hover"
+                            >
+                              <Mic size={13} /> 记录/上传材料
+                            </button>
+                          </div>
+                          <p className="mt-2 flex flex-wrap items-center gap-1 text-[10.5px] text-text-tertiary">
+                            材料提交 <span className="text-primary">→</span> AI 提取（客观原文） <span className="text-primary">→</span> 确认队列（低风险自动生效） <span className="text-primary">→</span> 第二来源交叉 <span className="text-primary">→</span> 字段点亮
+                          </p>
+                        </div>
+
+                        {/* 阶段档案（水位版） */}
+                        {gate && gate.requiredFields.length > 0 && (
+                          <div className="mt-3 space-y-1 rounded-lg border border-border bg-surface p-3">
+                            <p className="mb-1 text-xs font-medium text-text-secondary">本阶段门禁字段（验证水位）</p>
+                            <GateFieldPanel
+                              project={detailItem}
+                              fields={gate.requiredFields}
+                              gateField={gateField}
+                            />
+                          </div>
+                        )}
+
+                        {/* 底部：水位计数 + 推进/回退 */}
+                        <div className="mt-3 flex items-center gap-3 rounded-lg border border-border-subtle bg-surface-elevated px-3 py-2.5">
+                          <p className="flex-1 text-xs text-text-tertiary">
+                            {m >= 8 ? '已到终点'
+                            : !gateStatus.completed ? <>推进条件 <b className="text-warning">{gate.requiredFields.length - gateStatus.missing.length}/{gate.requiredFields.length}</b> · 提交材料或填写后点亮</>
+                            : belowReq.length > 0 ? <>可推进 · <b className="text-warning">{belowReq.length} 项未达验证水位</b>（将弱锚定）</>
+                            : <><b className="text-success">全部字段已达验证水位</b> · 强锚定推进</>}
+                          </p>
+                          <div className="flex items-center gap-1">
+                            {m > 0 && (
+                              <button
+                                onClick={() => setRollbackOpen((v) => !v)}
+                                disabled={update.isPending}
+                                className="flex items-center gap-1 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs text-text-secondary transition-colors hover:border-danger/40 hover:text-danger disabled:opacity-50"
+                                title="回退到上一里程碑（需填原因，留痕）"
+                              >
+                                <ChevronLeft size={12} /> 回退
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleAdvanceMilestone(detailItem)}
+                              disabled={update.isPending || !gateStatus.completed || m >= 8}
+                              className="flex items-center gap-1 rounded-lg bg-primary px-5 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:bg-border disabled:text-text-tertiary"
+                              title={gateStatus.completed ? (belowReq.length > 0 ? '含未验证字段，将弱锚定推进' : '全部字段验证达标，强锚定推进') : `需先录入：${gateStatus.missing.join('、')}`}
+                            >
+                              {update.isPending ? <Loader2 size={12} className="animate-spin" /> : <ChevronRight size={12} />}
+                              推进到 M{m + 1}
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* 回退原因内联表单（ADR-0004 决策 4） */}
+                        {rollbackOpen && detailItem.milestone > 0 && (
+                          <div className="mt-3 space-y-2 rounded-lg border border-danger/20 bg-danger/5 p-3">
+                            <p className="text-xs text-danger">
+                              回退 M{detailItem.milestone} → M{detailItem.milestone - 1}（必填原因，将记录到时间轴）
+                            </p>
+                            <textarea
+                              value={rollbackReason}
+                              onChange={(e) => setRollbackReason(e.target.value)}
+                              rows={2}
+                              placeholder="如：客户需求范围变更，需重新确认需求指标"
+                              aria-label="回退原因"
+                              className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary outline-none focus:border-danger"
+                            />
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => { setRollbackOpen(false); setRollbackReason('') }}
+                                className="flex-1 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs text-text-secondary hover:bg-surface-elevated"
+                              >
+                                取消
+                              </button>
+                              <button
+                                onClick={() => handleRollbackSubmit(detailItem)}
+                                disabled={update.isPending || !rollbackReason.trim()}
+                                className="flex-1 rounded-lg bg-danger px-3 py-1.5 text-xs font-medium text-white hover:bg-danger/90 disabled:opacity-50"
+                              >
+                                {update.isPending ? '回退中...' : '确认回退'}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    )
+                  })()}
                 </div>
 
                 {/* Milestone Stage Checklist */}
@@ -886,7 +1025,6 @@ export default function Projects() {
                   const checklist = milestoneChecklists[detailItem.milestone]
                   if (!checklist) return null
                   const gateStatus = checkGateCompletion(detailItem)
-                  const gate = MILESTONE_GATES[detailItem.milestone]
                   return (
                     <div className="rounded-xl border border-border bg-background p-4">
                       <div className="mb-3 flex items-center justify-between">
@@ -906,31 +1044,7 @@ export default function Projects() {
                         ))}
                       </div>
 
-                      {gate && gate.requiredFields.length > 0 && (
-                        <div className="mt-3 space-y-2 rounded-lg border border-border bg-surface p-3">
-                          <p className="text-xs font-medium text-text-secondary">
-                            阶段档案（当前值 / 来源 / 人工入口）
-                          </p>
-                          <GateFieldPanel
-                            project={detailItem}
-                            fields={gate.requiredFields}
-                            gateField={gateField}
-                          />
-                        </div>
-                      )}
-
-                      {!gateStatus.completed && (
-                        <div className="mt-3 rounded-lg border border-warning/20 bg-warning/5 p-3">
-                          <p className="text-xs text-warning">本阶段信息需通过客户拜访获取，请记录拜访后由 AI 自动分析提取。</p>
-                          <button
-                            type="button"
-                            onClick={() => setVisitFormOpen(true)}
-                            className="mt-2 flex w-full items-center justify-center gap-1 rounded-lg bg-primary py-1.5 text-xs font-medium text-white hover:bg-primary/90"
-                          >
-                            <Plus size={12} /> 记录拜访
-                          </button>
-                        </div>
-                      )}
+                      {/* 阶段档案与材料入口已并入上方推进卡 v2（ADR-0005） */}
 
                       <div className="mt-3 rounded-lg bg-primary/5 p-3">
                         <p className="text-xs font-medium text-primary">{checklist.nextHint}</p>
@@ -1097,11 +1211,11 @@ export default function Projects() {
   )
 }
 
-/** 三阶段着色（ADR-0003 / 决策⑧）：M0-2 蓝 / M3-5 紫 / M6-8 绿 */
+/** 三段式（ADR-0005 决策 4）：育单 M0-2 / 谈单 M3-5 / 成单 M6-8 */
 const PHASES = [
-  { name: '前期 · 信息收集', cls: 'border-t-primary', range: [0, 2], label: 'bg-primary' },
-  { name: '中期 · 方案推进', cls: 'border-t-violet-600', range: [3, 5], label: 'bg-violet-600' },
-  { name: '后期 · 成交落地', cls: 'border-t-success', range: [6, 8], label: 'bg-success' },
+  { name: '育单 · 摸清底细', cls: 'border-t-primary', range: [0, 2], label: 'bg-primary' },
+  { name: '谈单 · 拿下方案与价', cls: 'border-t-violet-600', range: [3, 5], label: 'bg-violet-600' },
+  { name: '成单 · 走完采购', cls: 'border-t-success', range: [6, 8], label: 'bg-success' },
 ] as const
 
 function phaseOf(milestone: number) {
@@ -1277,9 +1391,9 @@ function ProjectBoard({
       </div>
       {/* 图例 */}
       <div className="mt-2 flex flex-wrap gap-4 px-1 text-[11px] text-text-tertiary">
-        <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-primary align-middle" />M0-2 前期·信息收集</span>
-        <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-violet-600 align-middle" />M3-5 中期·方案推进</span>
-        <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-success align-middle" />M6-8 后期·成交落地</span>
+        <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-primary align-middle" />M0-2 育单·摸清底细</span>
+        <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-violet-600 align-middle" />M3-5 谈单·拿下方案与价</span>
+        <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-success align-middle" />M6-8 成单·走完采购</span>
         <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-danger/20 align-middle" />红标=停滞/幻觉</span>
         <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-primary/20 align-middle" />紫/蓝标=合理等待（不计停滞）</span>
       </div>
@@ -1365,11 +1479,6 @@ function DecisionChainSection({ projectId, companyId, companyName }: { projectId
   )
 }
 
-/**
- * 阶段档案面板（ADR-0004 决策 5/6）：本阶段 gate 字段逐条展示当前值+来源，
- * 提供人工录入（AI 提取不是唯一通路）与 manual-pass 单字段豁免（理由必填）。
- * 来源推断：evidence._gateFieldSource[path] 有值用之；字段有值但无标记 = AI 提取产物。
- */
 function GateFieldPanel({
   project,
   fields,
@@ -1381,51 +1490,62 @@ function GateFieldPanel({
 }) {
   const [editingPath, setEditingPath] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
-  const [passPath, setPassPath] = useState<string | null>(null)
-  const [reason, setReason] = useState('')
 
-  const sources = ((project.evidence as Record<string, unknown> | null)?._gateFieldSource as Record<string, string>) || {}
+  const metas = readFieldMetas(project.evidence)
   const record = project as unknown as Record<string, unknown>
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-1">
       {fields.map((field) => {
         const val = getNestedValue(record, field.path)
         const valid = field.validate ? field.validate(val) : !isEmptyValue(val)
-        const source = sources[field.path]
-        const sourceLabel =
-          source === 'manual' ? '手动' : source === 'manual-pass' ? '豁免' : valid ? 'AI 提取' : '暂无'
-        const sourceCls =
-          source === 'manual' ? 'bg-primary/10 text-primary'
-          : source === 'manual-pass' ? 'bg-warning/10 text-warning'
-          : valid ? 'bg-surface-elevated text-text-tertiary' : 'bg-danger/10 text-danger'
-        const display = Array.isArray(val) ? `${val.length} 项` : typeof val === 'string' ? (val.length > 24 ? `${val.slice(0, 24)}…` : val) : '-'
+        const colloq = FIELD_COLLOQ[field.path]
+        const meta = metas[field.path]
+        const level = valid ? (meta?.level ?? 'single') : null
+        // AI 提取但无 meta 记录（历史数据）按单源展示
+        const levelMeta = level ? LEVEL_META[level] : null
+        const req = colloq?.req ?? 'material'
+        const belowReq = level ? (LEVEL_RANK[level] < REQ_LEVEL[req]) : false
+        const locked = level === 'cross' || level === 'final'
+        const display = Array.isArray(val)
+          ? `${val.length} 项`
+          : typeof val === 'string' ? (val.length > 30 ? `${val.slice(0, 30)}…` : val) : '-'
         return (
-          <div key={field.path} className="rounded-lg border border-border/60 p-2">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-medium text-text-secondary">{field.label}</span>
-              <span className={`rounded-full px-1.5 py-0.5 text-[11px] font-medium ${sourceCls}`}>{sourceLabel}</span>
+          <div key={field.path} className="border-t border-border-subtle py-2.5 first:border-t-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[13px] font-semibold text-text-secondary" title={field.label}>{colloq?.label ?? field.label}</span>
+              {levelMeta ? (
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${levelMeta.cls}`}>{levelMeta.text}</span>
+              ) : (
+                <span className="rounded-full bg-surface-elevated px-2 py-0.5 text-[10px] font-bold text-text-tertiary">待提交材料</span>
+              )}
+              {belowReq && level && (
+                <span className="text-[10px] text-text-tertiary">未达水位</span>
+              )}
               <span className="ml-auto flex items-center gap-1.5">
-                {typeof val === 'string' && (
+                {typeof val === 'string' && !locked && (
                   <button
                     onClick={() => { setEditingPath(field.path); setDraft(val) }}
                     className="text-[11px] text-primary hover:underline"
                   >
-                    修改
+                    {valid ? '修改' : '填写'}
                   </button>
                 )}
-                {source !== 'manual-pass' && (
+                {locked && <span className="text-[11px] text-text-tertiary" title="已达交叉/坐实水位，不可手改（防自述覆盖客观证据）">已锁定</span>}
+                {level !== 'final' && (
                   <button
-                    onClick={() => { setPassPath(field.path); setReason('') }}
+                    onClick={() => gateField.mutate(
+                      { path: field.path, manualPass: true, reason: '人工标记达标' } as never,
+                    )}
                     className="text-[11px] text-warning hover:underline"
-                    title="信息来自公告/调研等非拜访渠道时，标记该字段达标（理由必填，时间轴留痕）"
+                    title="信息来自公告/调研等非拜访渠道时，标记该字段达标（留痕）"
                   >
                     标记达标
                   </button>
                 )}
-                {source === 'manual-pass' && (
+                {level === 'final' && (
                   <button
-                    onClick={() => gateField.mutate({ path: field.path, manualPass: false })}
+                    onClick={() => gateField.mutate({ path: field.path, manualPass: false } as never)}
                     className="text-[11px] text-danger hover:underline"
                   >
                     取消豁免
@@ -1433,16 +1553,24 @@ function GateFieldPanel({
                 )}
               </span>
             </div>
-            <p className={`mt-1 text-[11px] ${valid ? 'text-text-secondary' : 'text-text-tertiary'}`} title={typeof val === 'string' ? val : undefined}>
-              {valid || source === 'manual-pass' ? display : '未录入——记录拜访由 AI 提取，或点「标记达标」豁免'}
+            {/* 验证要求 + 帮助 */}
+            <p className="mt-0.5 text-[11px] text-text-tertiary">
+              验证要求：<b className="text-info">{REQ_NAME[req]}</b>
+              <span className="ml-1">· {colloq?.help ?? field.label} · 手动填写视为自述，材料到达后自动印证或覆盖</span>
+            </p>
+            {/* 当前值 */}
+            <p className={`mt-1 text-xs ${valid ? 'text-text-secondary' : 'text-text-tertiary'}`} title={typeof val === 'string' ? val : undefined}>
+              {valid || level === 'final' ? display : '未录入——提交材料由 AI 提取，或点「填写」手填（自述）'}
             </p>
 
             {editingPath === field.path && (
               <div className="mt-2 space-y-1.5">
-                <input
+                <textarea
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
-                  aria-label={`${field.label} 人工录入`}
+                  rows={2}
+                  aria-label={`${colloq?.label ?? field.label} 人工录入`}
+                  placeholder="AI 提取后自动填充；也可手动填写（将标记为自述·未验证）…"
                   className="w-full rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs text-text-primary outline-none focus:border-primary"
                 />
                 <div className="flex gap-1.5">
@@ -1455,34 +1583,46 @@ function GateFieldPanel({
                     disabled={!draft.trim() || gateField.isPending}
                     className="flex-1 rounded-md bg-primary px-2 py-1 text-[11px] font-medium text-white disabled:opacity-50"
                   >
-                    保存
+                    保存（自述）
                   </button>
                 </div>
               </div>
             )}
-            {passPath === field.path && (
-              <div className="mt-2 space-y-1.5">
-                <textarea
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                  rows={2}
-                  aria-label={`${field.label} 豁免理由`}
-                  placeholder="豁免理由（必填，记录到时间轴），如：中标结果见政采网公告 2026-0815 号"
-                  className="w-full rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs text-text-primary outline-none focus:border-warning"
-                />
-                <div className="flex gap-1.5">
-                  <button onClick={() => setPassPath(null)} className="flex-1 rounded-md border border-border px-2 py-1 text-[11px] text-text-secondary">取消</button>
+
+            {/* 来源链（ADR-0005）：chips 可撤销 + 决策人坐实 */}
+            {meta && meta.sources.length > 0 && (
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                {meta.sources.map((s) => (
+                  <span key={s} className="flex items-center gap-1 rounded-full bg-surface-elevated px-2 py-0.5 text-[10px] text-text-secondary">
+                    <Paperclip size={9} /> {s}
+                    <button
+                      onClick={() => gateField.mutate({ path: field.path, revokeSource: s } as never)}
+                      className="font-bold text-danger hover:opacity-70"
+                      aria-label={`撤销来源 ${s}`}
+                      title="撤销该来源（水位降级）"
+                    >
+                      ✕
+                    </button>
+                  </span>
+                ))}
+                {level === 'cross' && req === 'decision' && (
                   <button
-                    onClick={() => gateField.mutate(
-                      { path: field.path, manualPass: true, reason: reason.trim() },
-                      { onSuccess: () => setPassPath(null) },
-                    )}
-                    disabled={!reason.trim() || gateField.isPending}
-                    className="flex-1 rounded-md bg-warning px-2 py-1 text-[11px] font-medium text-white disabled:opacity-50"
+                    onClick={() => gateField.mutate({ path: field.path, confirmDecision: true } as never)}
+                    className="rounded-full border border-success/50 px-2.5 py-0.5 text-[10.5px] text-success transition-colors hover:bg-success/10"
+                    title="决策人直接确认后，字段坐实"
                   >
-                    确认豁免
+                    决策人确认（坐实）
                   </button>
-                </div>
+                )}
+                {level !== 'final' && meta.sources.length < 2 && (
+                  <button
+                    onClick={() => gateField.mutate({ path: field.path, addSource: `材料${new Date().toLocaleDateString('zh-CN')}` } as never)}
+                    className="rounded-full border border-dashed border-border px-2.5 py-0.5 text-[10.5px] text-text-tertiary transition-colors hover:border-primary hover:text-primary"
+                    title="实际流程：再提交一份材料由 AI 提取；此处手动登记一份来源用于交叉"
+                  >
+                    + 补一份来源（交叉坐实）
+                  </button>
+                )}
               </div>
             )}
           </div>

@@ -199,7 +199,7 @@ export function useDeleteProject() {
 export function useUpdateGateField(projectId?: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (data: { path: string; value?: string; manualPass?: boolean; reason?: string }) =>
+    mutationFn: (data: { path: string; value?: string; manualPass?: boolean; reason?: string; addSource?: string; revokeSource?: string; confirmDecision?: boolean }) =>
       put(`/api/projects/${projectId}/gate-field`, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['project', projectId] })

@@ -9,6 +9,7 @@ import { refreshClosure, getRawInput } from './closure.service.js'
 import { generatePrepMaterial } from './visit-prep.service.js'
 import { createAutoAppliedItem } from '../confirmations/confirmations.service.js'
 import { dedupeSimilar, filterSimilarTo } from '../../lib/text-dedupe.js'
+import { accumulateGateFieldSource } from '../projects/verification-tiers.js'
 import { ActivityEventType } from '../../lib/activity.js'
 
 function getPrisma(req: FastifyRequest): PrismaClient {
@@ -246,6 +247,18 @@ ${content}
     let knownSolution = (project.businessInfo as Record<string, unknown>)?.solution
     let knownPrice = (project.financeInfo as Record<string, unknown>)?.price
     let knownBidResult = (project.evidence as Record<string, unknown>)?.bidResult
+
+    // ADR-0005：字段已有值且 AI 再次提取到 → 累积来源（单源→交叉验证升级路径）
+    const sourceName = `材料${new Date(visit.visitTime).toLocaleDateString('zh-CN')}`
+    const accumulate = (path: string, extracted: string | undefined, known: unknown) => {
+      if (extracted?.trim() && known) {
+        accumulateGateFieldSource(prisma, visit.projectId!, path, sourceName).catch(() => {})
+      }
+    }
+    accumulate('humanInfo.firstContact', analysis.keyInfo?.firstContact, knownFirstContact)
+    accumulate('businessInfo.solution', analysis.keyInfo?.solution, knownSolution)
+    accumulate('financeInfo.price', analysis.keyInfo?.price, knownPrice)
+    accumulate('evidence.bidResult', analysis.evidence?.bidResult, knownBidResult)
 
     if (analysis.keyInfo?.firstContact?.trim() && !knownFirstContact) {
       await createAutoAppliedItem(prisma, {
