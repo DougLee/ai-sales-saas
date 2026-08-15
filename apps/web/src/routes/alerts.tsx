@@ -89,7 +89,7 @@ export default function AlertsPage() {
           <button
             onClick={() => scanMutation.mutate()}
             disabled={scanMutation.isPending}
-            className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-primary-dark disabled:opacity-50"
+            className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-primary-hover disabled:opacity-50"
           >
             {scanMutation.isPending ? (
               <Loader2 size={16} className="animate-spin" />

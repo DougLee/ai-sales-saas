@@ -17,7 +17,7 @@ export default function Drawer({ open, onClose, title, children, width = '28rem'
       onClose={onClose}
       label={title}
       placement="right"
-      panelClassName="h-full w-full animate-in slide-in-from-right border-l border-border bg-surface shadow-2xl"
+      panelClassName="h-full w-full animate-slide-in-right border-l border-border bg-surface shadow-2xl"
       panelStyle={{ maxWidth: width }}
     >
       <div className="flex h-14 items-center justify-between border-b border-border px-5">

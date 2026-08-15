@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Upload, FileText, Loader2, Search, Database, Users, FolderOpen, Contact, CheckCircle, Lock, Globe, Building2 } from 'lucide-react'
 import { useKbFiles, useUploadFile, useAnalyzeFile, useEnrollBulk, useKbSearch, type FileAnalysis } from '../hooks/use-knowledge-base.js'
-import { EmptyState, LoadingState } from '../components/ui/states.js'
+import { EmptyState, LoadingState, ErrorState } from '../components/ui/states.js'
 
 const SCOPE_OPTIONS = [
   { key: 'ALL', label: '全部', icon: Database },
@@ -36,7 +36,7 @@ export default function KnowledgeBase() {
     }, { replace: true })
   }
   const [uploadScope, setUploadScope] = useState('PERSONAL')
-  const { data, isLoading } = useKbFiles(fileScope)
+  const { data, isLoading, error: filesError } = useKbFiles(fileScope)
   const upload = useUploadFile()
   const analyze = useAnalyzeFile()
   const enroll = useEnrollBulk()
@@ -190,7 +190,9 @@ export default function KnowledgeBase() {
       {/* File list */}
       {isLoading && <LoadingState />}
 
-      {!isLoading && files.length === 0 && (
+      {!isLoading && filesError && <ErrorState message={(filesError as Error).message || '文件列表加载失败'} />}
+
+      {!isLoading && !filesError && files.length === 0 && (
         <EmptyState
           icon={Database}
           title="暂无文件"

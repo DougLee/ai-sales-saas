@@ -27,7 +27,7 @@ const STAGE_COLORS: Record<string, string> = {
   PREPARING: 'bg-primary/10 text-primary',
   READY: 'bg-success/10 text-success',
   IN_PROGRESS: 'bg-warning/10 text-warning',
-  REVIEWING: 'bg-secondary/10 text-secondary',
+  REVIEWING: 'bg-warning/10 text-warning',
   CLOSED: 'bg-text-tertiary/10 text-text-tertiary',
 }
 

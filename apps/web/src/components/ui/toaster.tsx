@@ -25,7 +25,7 @@ export default function Toaster() {
           <div
             key={t.id}
             role={t.type === 'error' ? 'alert' : 'status'}
-            className={`flex w-72 items-center gap-3 rounded-xl border px-4 py-3 text-sm font-medium shadow-lg backdrop-blur-sm transition-all animate-in slide-in-from-right ${styleMap[t.type]}`}
+            className={`flex w-72 items-center gap-3 rounded-xl border px-4 py-3 text-sm font-medium shadow-lg backdrop-blur-sm transition-all animate-slide-in-right ${styleMap[t.type]}`}
           >
             <Icon size={18} className="shrink-0" />
             <span className="flex-1">{t.message}</span>

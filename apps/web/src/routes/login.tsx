@@ -100,7 +100,7 @@ export default function Login() {
           <div>
             <label className="mb-1 block text-sm font-medium text-text-secondary">邮箱</label>
             <input
-              type="email"
+              type="email" autoComplete="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="h-11 w-full rounded-xl border border-border bg-background px-4 text-sm text-text-primary outline-none placeholder:text-text-tertiary focus:border-primary"
@@ -111,7 +111,7 @@ export default function Login() {
           <div>
             <label className="mb-1 block text-sm font-medium text-text-secondary">密码</label>
             <input
-              type="password"
+              type="password" autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="h-11 w-full rounded-xl border border-border bg-background px-4 text-sm text-text-primary outline-none placeholder:text-text-tertiary focus:border-primary"

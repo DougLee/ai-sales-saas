@@ -10,8 +10,16 @@
     --color-border: #E5E5EA;
     --color-border-subtle: #F2F2F7;
     --color-text-primary: #1C1C1E;
-    --color-text-secondary: #8E8E93;
-    --color-text-tertiary: #C7C7CC;
+    /* WCAG AA：正文场景色对白底对比度 ≥4.5:1（审计 #12：原 #8E8E93≈3.3 / #C7C7CC≈1.6 不达标） */
+    --color-text-secondary: #52525B;
+    --color-text-tertiary: #71717A;
+    /* 语义色双模式（浅色档加深，作文字色时 ≥4.5:1；暗色档保持 iOS 亮色系） */
+    --color-primary: #0071E3;
+    --color-primary-hover: #2B8AFF;
+    --color-success: #15803D;
+    --color-warning: #B45309;
+    --color-danger: #DC2626;
+    --color-info: #0369A1;
   }
 
   html.dark {
@@ -21,8 +29,14 @@
     --color-border: #2A2A35;
     --color-border-subtle: #1E1E28;
     --color-text-primary: #FFFFFF;
-    --color-text-secondary: #98989D;
-    --color-text-tertiary: #6E6E73;
+    --color-text-secondary: #A1A1AA;
+    --color-text-tertiary: #8E8E96;
+    --color-primary: #0A84FF;
+    --color-primary-hover: #409CFF;
+    --color-success: #32D74B;
+    --color-warning: #FF9F0A;
+    --color-danger: #FF453A;
+    --color-info: #64D2FF;
   }
 
   html {
