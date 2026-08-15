@@ -119,6 +119,17 @@ export async function list(req: FastifyRequest, reply: FastifyReply) {
       where.status = status
     }
 
+    // 客户池列表筛选（设计稿 20260813）：行业/等级/地区/来源/负责人
+    const { industry, level, region, source, ownerId, page, pageSize } = req.query as {
+      industry?: string; level?: string; region?: string; source?: string; ownerId?: string; page?: string; pageSize?: string
+    }
+    if (industry) where.industry = industry
+    if (level) where.level = level
+    if (region) where.region = { contains: region, mode: 'insensitive' }
+    if (source) where.source = source
+    if (ownerId === 'none') where.ownerId = null
+    else if (ownerId) where.ownerId = ownerId
+
     // 公海池筛选
     if (pool === 'open') {
       where.ownerId = null
@@ -131,20 +142,34 @@ export async function list(req: FastifyRequest, reply: FastifyReply) {
       ? { ...where, deletedAt: null }
       : await buildOwnerWhere(prisma, user as never, { ...where, deletedAt: null })
 
-    const [items, total] = await Promise.all([
+    // 分页（设计稿：每页 20/50，上限 100 防全量拉取）
+    const take = Math.min(Number(pageSize) || 20, 100)
+    const skip = (Math.max(Number(page) || 1, 1) - 1) * take
+
+    // 页签计数（不受筛选影响，仅按数据范围）：状态分布 + 公海池
+    const scopeOnlyWhere = user.role === 'SALES'
+      ? { deletedAt: null }
+      : await buildOwnerWhere(prisma, user as never, { deletedAt: null })
+    const [items, total, statusGroups, openPoolCount, allCount] = await Promise.all([
       prisma.company.findMany({
         where: finalWhere,
         orderBy: { updatedAt: 'desc' },
-        take: 100,
+        skip,
+        take,
         include: {
           _count: { select: { projects: true, leads: true, visits: true, tasks: true } },
           owner: { select: { id: true, name: true } },
         },
       }),
       prisma.company.count({ where: finalWhere }),
+      prisma.company.groupBy({ by: ['status'], where: scopeOnlyWhere, _count: { _all: true } }),
+      prisma.company.count({ where: { ...scopeOnlyWhere, ownerId: null } }),
+      prisma.company.count({ where: scopeOnlyWhere }),
     ])
-    // P1：返回真实总数（列表最多取 100 条，前端不能把当批条数当总数）
-    reply.send({ success: true, items, total })
+    const counts: Record<string, number> = { all: allCount, open: openPoolCount }
+    for (const g of statusGroups) counts[g.status] = g._count._all
+    // P1：返回真实总数（分页后前端不能把当批条数当总数）
+    reply.send({ success: true, items, total, counts, page: Math.max(Number(page) || 1, 1), pageSize: take })
   } catch (err) {
     reply.status(500).send({ success: false, error: (err as Error).message })
   }
