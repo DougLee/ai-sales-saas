@@ -253,7 +253,11 @@ export function useAssessmentJob(leadId?: string, jobId?: string) {
     queryKey: ['lead-assessment-job', leadId, jobId],
     queryFn: () => get<{ data: LeadAssessmentJob }>(`/api/leads/${leadId}/assessment-jobs/${jobId}`).then(r => r.data),
     enabled: !!leadId && !!jobId,
-    refetchInterval: 3_000,
+    // 终态（completed/failed）停止轮询（审计 #14：避免失败后仍每 3s 打一次）
+    refetchInterval: (query) => {
+      const status = query.state.data?.status
+      return status === 'completed' || status === 'failed' ? false : 3_000
+    },
   })
 }
 

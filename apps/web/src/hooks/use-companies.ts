@@ -144,8 +144,8 @@ export function useBatchCompany() {
       post<{ updated: number; skipped: number }>('/api/companies/batch', data),
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['companies'] })
-      qc.invalidateQueries({ queryKey: ['company'] })
       qc.invalidateQueries({ queryKey: ['company-metrics'] })
+      qc.invalidateQueries({ queryKey: ['company'] })
       toast.success(`批量操作完成：更新 ${res?.updated ?? 0} 家${res?.skipped ? `，跳过 ${res.skipped} 家` : ''}`)
     },
     onError: (err) => toast.error((err as Error).message || '批量操作失败'),
@@ -177,6 +177,7 @@ export function useCreateCompany() {
       post<{ item: Company }>('/api/companies', data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['companies'] })
+      qc.invalidateQueries({ queryKey: ['company-metrics'] })
       toast.success('客户创建成功')
     },
     onError: (err) => toast.error((err as Error).message || '创建失败'),
@@ -190,6 +191,7 @@ export function useUpdateCompany() {
       put<{ item: Company }>(`/api/companies/${id}`, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['companies'] })
+      qc.invalidateQueries({ queryKey: ['company-metrics'] })
       qc.invalidateQueries({ queryKey: ['company'] })
       toast.success('客户更新成功')
     },
@@ -203,6 +205,7 @@ export function useDeleteCompany() {
     mutationFn: (id: string) => del(`/api/companies/${id}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['companies'] })
+      qc.invalidateQueries({ queryKey: ['company-metrics'] })
       toast.success('客户已删除')
     },
     onError: (err) => toast.error((err as Error).message || '删除失败'),
@@ -216,6 +219,7 @@ export function useClaimCompany() {
       post<{ item: Company }>(`/api/companies/${id}/claim`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['companies'] })
+      qc.invalidateQueries({ queryKey: ['company-metrics'] })
       qc.invalidateQueries({ queryKey: ['company'] })
       toast.success('认领成功')
     },
@@ -230,6 +234,7 @@ export function useAssignCompany() {
       post<{ item: Company }>(`/api/companies/${id}/assign`, { ownerId }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['companies'] })
+      qc.invalidateQueries({ queryKey: ['company-metrics'] })
       qc.invalidateQueries({ queryKey: ['company'] })
       toast.success('分配成功')
     },
@@ -244,6 +249,7 @@ export function useUpdateCompanyStatus() {
       put<{ item: Company }>(`/api/companies/${id}/status`, { status, reason }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['companies'] })
+      qc.invalidateQueries({ queryKey: ['company-metrics'] })
       qc.invalidateQueries({ queryKey: ['company'] })
       toast.success('状态更新成功')
     },
@@ -293,6 +299,7 @@ export function useMergeCompany() {
       post<MergeResult>(`/api/companies/${intoId}/merge`, { fromId }),
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['companies'] })
+      qc.invalidateQueries({ queryKey: ['company-metrics'] })
       qc.invalidateQueries({ queryKey: ['company'] })
       qc.invalidateQueries({ queryKey: ['company-duplicates'] })
       qc.invalidateQueries({ queryKey: ['data-quality'] })

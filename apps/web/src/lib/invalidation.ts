@@ -25,6 +25,7 @@ export function invalidateVisitRelated(
   // 前缀失效：覆盖当前可能打开的其他项目详情（只会 refetch 活跃查询）
   qc.invalidateQueries({ queryKey: ['project'] })
   qc.invalidateQueries({ queryKey: ['projects'] })
+  qc.invalidateQueries({ queryKey: ['project-metrics'] })
   qc.invalidateQueries({ queryKey: ['tasks'] })
   qc.invalidateQueries({ queryKey: ['dashboard'] })
   qc.invalidateQueries({ queryKey: ['confirmations'] })
@@ -33,6 +34,8 @@ export function invalidateVisitRelated(
 export function invalidateProjectRelated(qc: QueryClient, projectId?: string) {
   qc.invalidateQueries({ queryKey: ['projects'] })
   if (projectId) qc.invalidateQueries({ queryKey: ['project', projectId] })
+  qc.invalidateQueries({ queryKey: ['project-metrics'] })
+  qc.invalidateQueries({ queryKey: ['decision-chain'] })
   qc.invalidateQueries({ queryKey: ['pipeline'] })
   qc.invalidateQueries({ queryKey: ['dashboard'] })
 }
@@ -56,12 +59,17 @@ export function invalidateContactRelated(qc: QueryClient, contactId?: string) {
 export function invalidateLeadRelated(qc: QueryClient, leadId?: string) {
   qc.invalidateQueries({ queryKey: ['leads'] })
   if (leadId) qc.invalidateQueries({ queryKey: ['lead', leadId] })
+  qc.invalidateQueries({ queryKey: ['lead-metrics'] })
+  qc.invalidateQueries({ queryKey: ['lead-follow-ups'] })
   qc.invalidateQueries({ queryKey: ['dashboard'] })
 }
 
 export function invalidateCompanyRelated(qc: QueryClient, companyId?: string) {
   qc.invalidateQueries({ queryKey: ['companies'] })
   if (companyId) qc.invalidateQueries({ queryKey: ['company', companyId] })
+  qc.invalidateQueries({ queryKey: ['company-metrics'] })
+  qc.invalidateQueries({ queryKey: ['company-history'] })
+  qc.invalidateQueries({ queryKey: ['company-missing-fields'] })
   qc.invalidateQueries({ queryKey: ['projects'] })
   qc.invalidateQueries({ queryKey: ['dashboard'] })
 }

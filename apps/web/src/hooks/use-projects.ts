@@ -23,6 +23,7 @@ export function useMarkWaiting() {
       put<Project>(`/api/projects/${id}/waiting`, { waitingStatus, note }),
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: ['projects'] })
+      qc.invalidateQueries({ queryKey: ['project-metrics'] })
       qc.invalidateQueries({ queryKey: ['project', vars.id] })
       qc.invalidateQueries({ queryKey: ['activities'] })
       toast.success('已标记等待客户，停滞倒计时暂停')
@@ -37,6 +38,7 @@ export function useClearWaiting() {
     mutationFn: (id: string) => del(`/api/projects/${id}/waiting`),
     onSuccess: (_data, id) => {
       qc.invalidateQueries({ queryKey: ['projects'] })
+      qc.invalidateQueries({ queryKey: ['project-metrics'] })
       qc.invalidateQueries({ queryKey: ['project', id] })
       qc.invalidateQueries({ queryKey: ['activities'] })
       toast.success('已解除等待，恢复停滞检测')
@@ -130,11 +132,13 @@ export function useProjectMetrics() {
   })
 }
 
-export function useProjects(params?: { milestone?: number; urgency?: string; search?: string }) {
+export function useProjects(params?: { milestone?: number; urgency?: string; search?: string; page?: number; pageSize?: number }) {
   const queryString = new URLSearchParams()
   if (params?.milestone != null) queryString.set('milestone', String(params.milestone))
   if (params?.urgency) queryString.set('urgency', params.urgency)
   if (params?.search) queryString.set('search', params.search)
+  if (params?.page) queryString.set('page', String(params.page))
+  if (params?.pageSize) queryString.set('pageSize', String(params.pageSize))
 
   return useQuery({
     queryKey: ['projects', params],
@@ -152,6 +156,7 @@ export function useCreateProject() {
     mutationFn: (data: Partial<Project>) => post<Project>('/api/projects', data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['projects'] })
+      qc.invalidateQueries({ queryKey: ['project-metrics'] })
       toast.success('商机创建成功')
     },
     onError: (err) => toast.error((err as Error).message || '创建失败'),
@@ -165,6 +170,7 @@ export function useUpdateProject() {
       put<Project>(`/api/projects/${id}`, data),
     onSuccess: (_res, vars) => {
       qc.invalidateQueries({ queryKey: ['projects'] })
+      qc.invalidateQueries({ queryKey: ['project-metrics'] })
       // P0：详情页走 ['project', id] 独立查询，操作后必须精确失效，否则详情不刷新
       qc.invalidateQueries({ queryKey: ['project', vars.id] })
       toast.success('商机更新成功')
@@ -179,6 +185,7 @@ export function useDeleteProject() {
     mutationFn: (id: string) => del(`/api/projects/${id}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['projects'] })
+      qc.invalidateQueries({ queryKey: ['project-metrics'] })
       toast.success('商机已删除')
     },
     onError: (err) => toast.error((err as Error).message || '删除失败'),
