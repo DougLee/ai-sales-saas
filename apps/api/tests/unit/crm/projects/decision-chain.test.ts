@@ -167,11 +167,32 @@ describe('DecisionChainService', () => {
       expect.objectContaining({
         data: {
           decisionMap: {
+            nodes: [
+              expect.objectContaining({ id: 'pc_c_1', contactId: 'c_1', name: '张三', role: 'EVALUATOR' }),
+              expect.objectContaining({ id: 'pc_contact_李四', name: '李四', role: 'DECISION_MAKER' }),
+            ],
             relations: [{ sourceId: 'pc_c_1', targetId: 'pc_contact_李四', relation: 'reports_to' }],
           },
         },
       }),
     )
+  })
+
+  it('syncs nodes back into decisionMap so the M6 gate can read them (P0-2)', async () => {
+    const prisma = createMockPrisma()
+    const service = new DecisionChainService(prisma)
+
+    await service.update('proj_1', {
+      nodes: [{ id: 'n1', contactId: 'c_1', name: '张三', role: 'DECISION_MAKER', attitude: 'supportive' }],
+      relations: [],
+    })
+
+    const updateCall = (prisma.project.update as ReturnType<typeof vi.fn>).mock.calls[0][0] as {
+      data: { decisionMap: { nodes: Array<Record<string, unknown>> } }
+    }
+    expect(Array.isArray(updateCall.data.decisionMap.nodes)).toBe(true)
+    expect(updateCall.data.decisionMap.nodes).toHaveLength(1)
+    expect(updateCall.data.decisionMap.nodes[0]).toMatchObject({ id: 'pc_c_1', name: '张三', role: 'DECISION_MAKER' })
   })
 
   it('drops dangling relations on update', async () => {
@@ -184,7 +205,14 @@ describe('DecisionChainService', () => {
     })
 
     expect(prisma.project.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { decisionMap: { relations: [] } } }),
+      expect.objectContaining({
+        data: {
+          decisionMap: {
+            nodes: [expect.objectContaining({ id: 'pc_c_1' })],
+            relations: [],
+          },
+        },
+      }),
     )
   })
 

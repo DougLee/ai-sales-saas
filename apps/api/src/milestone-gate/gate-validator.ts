@@ -203,6 +203,8 @@ export async function loadMilestoneGates(prisma: PrismaClient, tenantId: string)
  * @param fromStage - 当前阶段
  * @param toStage - 目标阶段
  * @param gates - gate 规则配置，默认使用 DEFAULT_MILESTONE_GATES
+ * @param pendingChanges - 本次请求体里的字段变更（humanInfo/businessInfo/financeInfo/decisionMap/evidence），
+ *   与库值浅合并（请求体值覆盖库值）后再评估，避免「字段+里程碑同请求提交」按旧值误拦
  */
 export async function validateMilestoneAdvance(
   prisma: PrismaClient,
@@ -210,6 +212,7 @@ export async function validateMilestoneAdvance(
   fromStage: number,
   toStage: number,
   gates: MilestoneGate[] = DEFAULT_MILESTONE_GATES,
+  pendingChanges?: Record<string, unknown>,
 ): Promise<GateValidationResult> {
   // 回退或不变更时不校验（回退的确认与留痕在 controller 层处理，ADR-0004 决策 4）
   if (toStage <= fromStage) {
@@ -250,6 +253,12 @@ export async function validateMilestoneAdvance(
   })
 
   const projectData = (project ?? {}) as Record<string, unknown>
+  // P0-1：合并本次请求体的字段变更，gate 按「本次提交后的最终状态」评估而非库里的旧值
+  if (pendingChanges) {
+    for (const [key, value] of Object.entries(pendingChanges)) {
+      if (value !== undefined) projectData[key] = value
+    }
+  }
   const evidenceRecords = await loadEvidenceRecords(prisma, projectId)
   const missing: Array<{ path?: string; label: string }> = []
 

@@ -165,7 +165,7 @@ export async function update(req: FastifyRequest<{ Params: { id: string } }>, re
   try {
     const prisma = getPrisma(req)
     const user = getUser(req)
-    const existing = await prisma.project.findFirst({ where: { id: req.params.id, deletedAt: null }, select: { ownerId: true, companyId: true, milestone: true, name: true, closedAt: true, status: true } })
+    const existing = await prisma.project.findFirst({ where: { id: req.params.id, deletedAt: null }, select: { ownerId: true, companyId: true, milestone: true, name: true, closedAt: true, status: true, evidence: true } })
     if (!existing) return reply.status(404).send({ success: false, error: '商机不存在' })
     const hasAccess = await canAccess(prisma, user as never, existing.ownerId)
     if (!hasAccess) return reply.status(403).send({ success: false, error: '无权修改此商机' })
@@ -182,6 +182,14 @@ export async function update(req: FastifyRequest<{ Params: { id: string } }>, re
       return reply.status(400).send({ success: false, error: '输单时必须填写输单原因' })
     }
 
+    // P1-4：赢单/输单关单后不可变更里程碑（避免落进「推进条件不满足」的误导性报错），需先重新激活
+    if (existing.closedAt && body.milestone != null && body.milestone !== existing.milestone) {
+      return reply.status(400).send({
+        success: false,
+        error: '商机已关单（赢单/流失），不可变更里程碑；如需继续跟进请先重新激活',
+      })
+    }
+
     // ADR-0004 决策 4：回退必须填原因（回退往往意味着需求变化/报价被拒，是最该留证据的动作）
     if (body.milestone != null && body.milestone < existing.milestone && !body.backReason?.trim()) {
       return reply.status(400).send({
@@ -193,7 +201,14 @@ export async function update(req: FastifyRequest<{ Params: { id: string } }>, re
     // 里程碑推进校验
     if (body.milestone != null && body.milestone !== existing.milestone) {
       const gates = await loadMilestoneGates(prisma, user.tenantId)
-      const gateResult = await validateMilestoneAdvance(prisma, req.params.id, existing.milestone, body.milestone, gates)
+      // P0-1：把本次请求体的字段变更并入 gate 评估——「字段+里程碑同请求提交」按提交后状态判定
+      const gateResult = await validateMilestoneAdvance(prisma, req.params.id, existing.milestone, body.milestone, gates, {
+        humanInfo: body.humanInfo,
+        businessInfo: body.businessInfo,
+        financeInfo: body.financeInfo,
+        decisionMap: body.decisionMap,
+        evidence: body.evidence,
+      })
       if (!gateResult.passed) {
         return reply.status(400).send({
           success: false,
@@ -205,6 +220,14 @@ export async function update(req: FastifyRequest<{ Params: { id: string } }>, re
 
     const { notes, backReason, ...rest } = body
     const data: Record<string, unknown> = { ...rest }
+    if (body.evidence !== undefined) {
+      // P0-2 配套：整体覆盖 evidence 时保留 gate-field 接口写入的 _gateFieldSource（manual-pass 豁免标记）
+      const existingEvidence = (existing.evidence as Record<string, unknown> | null) || {}
+      const sources = existingEvidence._gateFieldSource
+      if (sources && typeof sources === 'object' && body.evidence._gateFieldSource === undefined) {
+        data.evidence = { ...body.evidence, _gateFieldSource: sources }
+      }
+    }
     if (notes !== undefined) {
       const current = await prisma.project.findFirst({ where: { id: req.params.id, deletedAt: null }, select: { humanInfo: true } })
       data.humanInfo = { ...(current?.humanInfo as Record<string, unknown> || {}), notes }

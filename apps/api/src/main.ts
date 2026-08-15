@@ -11,6 +11,7 @@ import { errorHandler } from './infra/error-handler.js'
 import { performHealthCheck } from './infra/health-check.js'
 import { tenantContextPlugin } from './tenant/tenant-context.js'
 import { authPlugin } from './plugins/auth.plugin.js'
+import { viewerReadOnlyPlugin } from './plugins/viewer-guard.plugin.js'
 import { registerGlobalRateLimit, registerAgentRateLimit } from './plugins/rate-limit.plugin.js'
 import { authRoutes } from './auth/auth.routes.js'
 import { methodologyRoutes } from './methodology/methodology.routes.js'
@@ -61,6 +62,8 @@ await app.register(swagger, {
 await app.register(swaggerUi, { routePrefix: '/docs' })
 await app.register(authPlugin)
 await app.register(tenantContextPlugin)
+// P1-3：VIEWER 只读守卫（须在 authPlugin 之后，onRequest 阶段 req.user 已存在）
+await app.register(viewerReadOnlyPlugin)
 await app.register(registerGlobalRateLimit)
 
 // Routes

@@ -57,6 +57,34 @@ describe('projects.schema', () => {
       const result = UpdateProjectSchema.parse({})
       expect(result).toEqual({})
     })
+
+    it('accepts decisionMap (P0-2: M6 门禁字段打通)', () => {
+      const decisionMap = { nodes: [{ id: 'n1', name: '张三', role: 'DECISION_MAKER' }], relations: [] }
+      const result = UpdateProjectSchema.parse({ decisionMap })
+      expect(result.decisionMap).toEqual(decisionMap)
+    })
+
+    it('accepts evidence (P0-2: M7 门禁字段打通)', () => {
+      const evidence = { bidResult: 'won', _gateFieldSource: { 'evidence.bidResult': 'manual-pass' } }
+      const result = UpdateProjectSchema.parse({ evidence })
+      expect(result.evidence).toEqual(evidence)
+    })
+
+    it('accepts decisionMap and evidence alongside milestone in one request (P0-1 单请求推进)', () => {
+      const result = UpdateProjectSchema.parse({
+        milestone: 7,
+        humanInfo: { firstContact: '电话' },
+        decisionMap: { nodes: [{ id: 'n1' }] },
+        evidence: { bidResult: 'won' },
+      })
+      expect(result.milestone).toBe(7)
+      expect(result.decisionMap).toEqual({ nodes: [{ id: 'n1' }] })
+      expect(result.evidence).toEqual({ bidResult: 'won' })
+    })
+
+    it('rejects non-record decisionMap', () => {
+      expect(() => UpdateProjectSchema.parse({ decisionMap: 'not-a-record' })).toThrow()
+    })
   })
 
   describe('ListProjectsQuerySchema', () => {

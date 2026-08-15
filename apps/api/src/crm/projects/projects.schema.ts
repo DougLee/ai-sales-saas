@@ -24,6 +24,13 @@ export const CreateProjectSchema = z.object({
 export const UpdateProjectSchema = CreateProjectSchema.partial().extend({
   /** ADR-0004 决策 4：里程碑回退原因（回退时必填） */
   backReason: z.string().min(1).optional(),
+  /**
+   * P0-2：M6/M7 门禁字段打通——gate 读 project.decisionMap.nodes / evidence.bidResult，
+   * PUT /projects/:id 此前没有这两个字段的入口，后两级里程碑成了断头路。
+   * （gate-field 接口直接走 prisma 写 evidence._gateFieldSource，不经此 schema，不受影响）
+   */
+  decisionMap: z.record(z.unknown()).optional(),
+  evidence: z.record(z.unknown()).optional(),
 })
 
 export const ListProjectsQuerySchema = z.object({

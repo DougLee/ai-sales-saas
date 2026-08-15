@@ -265,9 +265,21 @@ export class DecisionChainService {
       }))
       .filter((r) => validIds.has(r.sourceId) && validIds.has(r.targetId))
 
+    // P0-2：节点快照同步回写 decisionMap.nodes（M6 门禁读 project.decisionMap.nodes），
+    // 保持 decision-chain 接口与主表单一事实来源；读取时仍以 ProjectContact 为准
+    const nodes = data.nodes.map((node) => ({
+      id: idMap.get(node.id) ?? node.id,
+      contactId: node.contactId,
+      name: node.name,
+      title: node.title,
+      department: node.department,
+      role: normalizeRole(node.role),
+      attitude: node.attitude,
+    }))
+
     await this.prisma.project.update({
       where: { id: projectId },
-      data: { decisionMap: { relations } as never },
+      data: { decisionMap: { nodes, relations } as never },
     })
 
     return this.get(projectId)

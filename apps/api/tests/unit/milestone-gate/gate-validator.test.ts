@@ -296,6 +296,93 @@ describe('validateMilestoneAdvance', () => {
     expect(DEFAULT_MILESTONE_GATES).toHaveLength(9)
     expect(DEFAULT_MILESTONE_GATES[8].requiredFields).toHaveLength(0)
   })
+
+  describe('pendingChanges (P0-1: 字段+里程碑同请求提交)', () => {
+    it('merges pendingChanges over stale db values so same-request advance passes', async () => {
+      // 库里 firstContact 还是空的（本次请求体才带来新值）
+      const prisma = createMockPrisma({
+        humanInfo: {},
+        businessInfo: {},
+        financeInfo: {},
+        decisionMap: {},
+        evidence: [],
+      })
+
+      const result = await validateMilestoneAdvance(prisma, 'proj_1', 0, 1, undefined, {
+        humanInfo: { firstContact: '电话' },
+      })
+
+      expect(result.passed).toBe(true)
+      expect(result.missing).toHaveLength(0)
+    })
+
+    it('merges decisionMap pendingChanges for M6 gate (decision chain same-request advance)', async () => {
+      const prisma = createMockPrisma({
+        humanInfo: { firstContact: '电话', painPoints: ['效率低'] },
+        businessInfo: { requirements: 'x', solution: 'y', competitors: ['z'], ourAdvantage: 'w' },
+        financeInfo: { budget: '10万', price: '9万' },
+        decisionMap: {},
+        evidence: {},
+      })
+
+      const result = await validateMilestoneAdvance(prisma, 'proj_1', 6, 7, undefined, {
+        decisionMap: { nodes: [{ id: 'n1', name: '张三', role: 'DECISION_MAKER' }] },
+      })
+
+      expect(result.passed).toBe(true)
+      expect(result.missing).toHaveLength(0)
+    })
+
+    it('still fails when pendingChanges does not cover the missing field', async () => {
+      const prisma = createMockPrisma({
+        humanInfo: {},
+        businessInfo: {},
+        financeInfo: {},
+        decisionMap: {},
+        evidence: [],
+      })
+
+      const result = await validateMilestoneAdvance(prisma, 'proj_1', 0, 1, undefined, {
+        businessInfo: { requirements: 'x' }, // firstContact 仍缺
+      })
+
+      expect(result.passed).toBe(false)
+      expect(result.missing[0]).toEqual({ path: 'humanInfo.firstContact', label: '首次接触方式' })
+    })
+
+    it('ignores undefined entries in pendingChanges (keeps db value)', async () => {
+      const prisma = createMockPrisma({
+        humanInfo: { firstContact: '电话' },
+        businessInfo: {},
+        financeInfo: {},
+        decisionMap: {},
+        evidence: [],
+      })
+
+      const result = await validateMilestoneAdvance(prisma, 'proj_1', 0, 1, undefined, {
+        humanInfo: undefined,
+      })
+
+      expect(result.passed).toBe(true)
+    })
+
+    it('pendingChanges evidence participates in gate evaluation (M7 bidResult)', async () => {
+      const prisma = createMockPrisma({
+        humanInfo: {},
+        businessInfo: {},
+        financeInfo: {},
+        decisionMap: { nodes: [{ id: 'n1' }] },
+        evidence: {},
+      })
+
+      const result = await validateMilestoneAdvance(prisma, 'proj_1', 7, 8, undefined, {
+        evidence: { bidResult: 'won' },
+      })
+
+      expect(result.passed).toBe(true)
+      expect(result.missing).toHaveLength(0)
+    })
+  })
 })
 
 describe('loadMilestoneGates', () => {
