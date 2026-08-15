@@ -178,7 +178,11 @@ export async function getMe(req: FastifyRequest, reply: FastifyReply) {
         },
         orderBy: [{ priority: 'asc' }, { deadline: 'asc' }],
         take: 50,
-        include: { project: { select: { name: true } } },
+        // 今日作战页按客户聚合战役（issue #34）：任务带客户归属（task.company 优先，回退 project.company）
+        include: {
+          project: { select: { id: true, name: true, company: { select: { id: true, name: true } } } },
+          company: { select: { id: true, name: true } },
+        },
       }),
       prisma.project.findMany({
         where: projectBaseWhere,
