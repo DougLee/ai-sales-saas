@@ -40,6 +40,7 @@ model Tenant {
   changeHistories    ChangeHistory[]
   aiPendingItems     AiPendingItem[]
   projectTypeConfigs ProjectTypeConfig[]
+  evidenceSources    EvidenceSource[]
 }
 
 model User {
@@ -212,7 +213,7 @@ model Project {
   name             String
   industry         String   @default("education")
   amount           Decimal? @db.Decimal(15, 2)
-  status           String   @default("following") // following / stale / won / lost
+  status           ProjectStatus @default(following) // following / stale / won / lost（#33 A4 枚举化，存量小写值无损）
   milestone        Int      @default(0)
   milestoneHistory Json     @default("[]")
   humanInfo        Json     @default("{}")
@@ -261,6 +262,7 @@ model Project {
   timelineEvents        TimelineEvent[]
   visits                Visit[]
   visitClosures         VisitClosure[]
+  evidenceSources       EvidenceSource[]
 
   @@index([tenantId, ownerId])
   @@index([tenantId, orgId])
@@ -285,7 +287,7 @@ model Company {
   contactPerson     String?
   contactPhone      String?
   notes             String?
-  status            String    @default("target") // target / following / won / lost
+  status            CompanyStatus @default(target) // target / following / won / lost（#33 A4 枚举化）
   completenessScore Int       @default(0)
   dataConfidence    String    @default("medium") // high / medium / low
   createdAt         DateTime  @default(now())
@@ -392,7 +394,11 @@ model Visit {
   contactRole        String?
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
+  /// #33 A4 取舍：保持 String 不枚举化 —— 工作流阶段值高频新增（DRAFT/AUDIO_UPLOADED/...），枚举会拖慢迭代
   workflowStage      String        @default("DRAFT")
+  /// #33 A2 软删一致性：拜访含录音合规数据，物理删除有合规风险，父级软删时级联软删。
+  /// 注意：现有查询逻辑未过滤此列（最小增量），后续按需接入；恢复父级不会自动恢复拜访。
+  deletedAt          DateTime?
   owner              User          @relation("VisitOwner", fields: [ownerId], references: [id])
   org                Org?          @relation(fields: [orgId], references: [id])
   company            Company?      @relation(fields: [companyId], references: [id])
@@ -408,6 +414,7 @@ model Visit {
   @@index([tenantId, orgId])
   @@index([tenantId, ownerId])
   @@index([tenantId, visitTime])
+  @@index([tenantId, deletedAt])
 }
 
 model VisitClosure {
@@ -459,6 +466,9 @@ model Task {
   completedAt DateTime?
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
+  /// #33 A2 软删一致性：父级（Project/Company/Lead）软删时任务先被 cancelTasksForEntity 取消，
+  /// 此列补齐"任务本身软删"语义；现有查询逻辑未过滤此列（最小增量），后续按需接入。
+  deletedAt   DateTime?
   owner       User       @relation("TaskOwner", fields: [ownerId], references: [id])
   org         Org?       @relation(fields: [orgId], references: [id])
   company     Company?   @relation(fields: [companyId], references: [id])
@@ -470,6 +480,7 @@ model Task {
   @@index([tenantId, companyId])
   @@index([tenantId, status])
   @@index([tenantId, deadline])
+  @@index([tenantId, deletedAt])
 }
 
 model MethodologyConfig {
@@ -488,6 +499,8 @@ model MethodologyConfig {
 }
 
 model TimelineEvent {
+  /// #33 A2 取舍：不加 deletedAt —— 事实源天然 append-only，事件不随父级删除而消失（历史审计依据）；
+  /// 消费侧靠查询时按父级 deletedAt 过滤，而非事件自身软删。
   id           String  @id @default(cuid())
   tenantId     String
   ownerId      String? // 先optional，后续通过脚本回填数据后再改为必填
@@ -635,6 +648,8 @@ model Goal {
   @@index([tenantId, userId])
 }
 
+/// @deprecated（#33 A5）：死表——无任何代码引用（AI 配置实际走 config/ai-runtime.json 的 getAIConfig()），
+/// apiKey 明文列有安全隐患。不物理删除（避免迁移风险），后续如需多租户 AI 配置请按加密方案重设计后替换。
 model AiConfig {
   id          String   @id @default(cuid())
   tenantId    String
@@ -695,7 +710,7 @@ model AiPendingItem {
   ownerId      String // 待谁确认
   projectId    String?
   visitId      String?
-  itemType     String // 'task' | 'key_request' | 'budget_signal' | 'competitor_mention'
+  itemType     String // 'task' | 'key_request' | 'budget_signal' | 'competitor_mention'（#33 A4 取舍：值域高频新增，保持 String）
   itemData     Json // AI 提取的原始内容（含 evidence 锚定）
   status       String    @default("pending") // 'pending' | 'confirmed' | 'modified' | 'rejected'
   resolvedData Json?
@@ -726,12 +741,55 @@ model ProjectTypeConfig {
   @@unique([tenantId, typeKey])
 }
 
+/// #33 A1：字段级验证体系落表（ADR-0005 四级水位的库表形态）。
+/// 每个 gate 字段的每个来源一行；聚合口径（groupBy fieldPath）推导水位：
+///   来源名去重 ≥2 → cross；=1 → single；任一行 verifiedLevel=final（豁免/决策人坐实）→ final。
+/// 存量数据兼容：表内无该 project 记录时读路径回退 evidence._gateFieldSource JSON（verification-tiers.ts）；
+/// 所有写路径（gate-field.controller / accumulateGateFieldSource）双写：表 + JSON 镜像。
+model EvidenceSource {
+  id             String    @id @default(cuid())
+  tenantId       String
+  projectId      String
+  milestone      Int       @default(0) // 登记时商机所处里程碑
+  fieldPath      String // 指向 gate 字段，如 humanInfo.painPoints
+  sourceType     String    @default("manual") // 'visit_audio' | 'doc' | 'chat' | 'manual' | 'decision_maker'
+  sourceName     String // 人类可读来源名（与 JSON 镜像 sources 数组同口径，如「材料2026/8/14」「决策人确认」「豁免」）
+  sourceRefId    String? // 指向 Visit / KbDocument / TimelineEvent / ProjectContact
+  extractedValue Json      @default("{}") // AI 提取的客观原文
+  verifiedLevel  String    @default("single") // 'single' | 'cross' | 'final' —— 该来源行登记时的水位（聚合时重算，final 行可锁定 final）
+  extractedAt    DateTime  @default(now())
+  revokedAt      DateTime? // 非空 = 已撤销（撤销来源 = 删行，此列保留供审计回溯预留）
+  revokedReason  String?
+  createdAt      DateTime  @default(now())
+  project        Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tenant         Tenant    @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, projectId, fieldPath])
+  @@index([tenantId, projectId, revokedAt])
+}
+
 enum UserRole {
   SUPER_ADMIN
   TENANT_ADMIN
   DEPT_HEAD
   SALES
   VIEWER
+}
+
+/// #33 A4：Project.status 枚举化（存量小写值无损迁移，脏值归 following）
+enum ProjectStatus {
+  following
+  stale
+  won
+  lost
+}
+
+/// #33 A4：Company.status 枚举化（存量小写值无损迁移，脏值归 target）
+enum CompanyStatus {
+  target
+  following
+  won
+  lost
 }
 
 enum LeadStatus {

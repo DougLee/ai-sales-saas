@@ -8,18 +8,24 @@ import {
   FIELD_VERIFY_REQ,
   SOURCE_KEY,
   addSourceToMeta,
+  deleteEvidenceSourcesByName,
+  insertEvidenceSource,
   levelFromSources,
-  readFieldSources,
+  readFieldSourcesWithFallback,
   type GateFieldMeta,
 } from './verification-tiers.js'
 
 /**
- * 阶段档案字段写入口（ADR-0004 决策 5/6 + ADR-0005 水位体系）
+ * 阶段档案字段写入口（ADR-0004 决策 5/6 + ADR-0005 水位体系；#33 A1 落表）
  *
  * - 人工编辑：level=manual（自述·未验证），材料到达后被印证或覆盖
  * - manual-pass 豁免：映射 final 档（理由必填、时间轴留痕）
  * - addSource / revokeSource：来源链累积与撤销（水位升降）
  * - confirmDecision：decision 级字段由 cross 升 final（决策人坐实）
+ *
+ * #33 双写：来源链变更同时写 EvidenceSource 表（真相源，每来源一行）与
+ * evidence._gateFieldSource JSON（镜像，存量读路径兼容）。读口径表优先。
+ * sourceType 映射：手动登记='manual'，决策人确认='decision_maker'，豁免='manual'。
  */
 
 /** 允许人工直写值的字段（字符串形态；数组形态字段仅支持 manual-pass） */
@@ -92,9 +98,18 @@ export async function updateGateField(req: FastifyRequest<{ Params: { id: string
     }
 
     const evidence = { ...((project.evidence as Record<string, unknown>) || {}) }
-    const sources = readFieldSources(project.evidence as Record<string, unknown> | null)
+    // #33 A1：读口径表优先，表无记录回退 JSON 镜像（存量兼容）
+    const sources = await readFieldSourcesWithFallback(prisma, project.id, project.evidence as Record<string, unknown> | null)
     const data: Record<string, unknown> = {}
     const record = project as unknown as Record<string, unknown>
+    const tenantId = project.tenantId || user.tenantId
+    // 表写失败不阻塞主流程（JSON 镜像兜底），错误只吞不抛
+    const insertRow = (fieldPath: string, sourceName: string, sourceType: string, verifiedLevel: string) =>
+      insertEvidenceSource(prisma, {
+        tenantId, projectId: project.id, fieldPath, sourceName, sourceType, verifiedLevel,
+      }).catch(() => {})
+    const removeRows = (fieldPath: string, names?: string[]) =>
+      deleteEvidenceSourcesByName(prisma, project.id, fieldPath, names).catch(() => {})
 
     const setMeta = (path: string, meta: GateFieldMeta) => {
       sources[path] = meta
@@ -113,18 +128,25 @@ export async function updateGateField(req: FastifyRequest<{ Params: { id: string
       data[sk] = sectionObj
       // 手填 = 自述·未验证（ADR-0005）：清来源、降 manual
       setMeta(body.path, { level: 'manual', sources: [] })
+      await removeRows(body.path) // 清空该字段全部来源行
     } else if ('manualPass' in body && body.manualPass === true) {
       if (!body.reason?.trim()) {
         return reply.status(400).send({ success: false, error: '标记达标必须填写理由（将记录到时间轴）' })
       }
       setMeta(body.path, { level: 'final', sources: ['豁免'] })
+      await removeRows(body.path) // 豁免独占来源链（与 JSON 口径一致）
+      await insertRow(body.path, '豁免', 'manual', 'final')
     } else if ('manualPass' in body && body.manualPass === false) {
       delete sources[body.path]
       evidence[SOURCE_KEY] = sources
       data.evidence = evidence
+      await removeRows(body.path)
     } else if ('addSource' in body) {
       const existing = sources[body.path] ?? { level: 'manual' as const, sources: [] }
       setMeta(body.path, addSourceToMeta(existing, body.addSource))
+      if (!existing.sources.includes(body.addSource)) {
+        await insertRow(body.path, body.addSource, 'manual', 'single')
+      }
     } else if ('revokeSource' in body) {
       const existing = sources[body.path]
       if (!existing || !existing.sources.includes(body.revokeSource)) {
@@ -134,12 +156,16 @@ export async function updateGateField(req: FastifyRequest<{ Params: { id: string
       // 撤销来源 → 水位降级；final 只有豁免/决策人两类来源，撤销即退出 final
       const level = levelFromSources('manual', remain, true)
       setMeta(body.path, { level, sources: remain })
+      await removeRows(body.path, [body.revokeSource])
     } else if ('confirmDecision' in body) {
       if (FIELD_VERIFY_REQ[body.path] !== 'decision') {
         return reply.status(400).send({ success: false, error: '仅 decision 级字段（方案/报价/决策链）支持决策人坐实' })
       }
       const existing = sources[body.path] ?? { level: 'manual' as const, sources: [] }
       setMeta(body.path, { level: 'final', sources: [...new Set([...existing.sources, '决策人确认'])] })
+      if (!existing.sources.includes('决策人确认')) {
+        await insertRow(body.path, '决策人确认', 'decision_maker', 'final')
+      }
     }
 
     await prisma.project.update({ where: { id: project.id }, data: data as never })

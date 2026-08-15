@@ -7,9 +7,10 @@
  * - 失败不影响业务（catch 住）
  * - 敏感字段不进 changes（passwordHash / apiKey 等）
  *
- * 关于 Prisma $use middleware（暂未启用）：
- * - Prisma 6.19 client 上 $use 不可用（具体原因暂未查清）
- * - V3.2 再用 Prisma Client Extensions 重做自动捕获
+ * 关于 Prisma $use middleware（已废弃）：
+ * - $use 在 Prisma 5.x 起废弃；#33 A3 已改用 Prisma Client Extensions 的 query callback
+ *   自动捕获 Company/Lead/Project 写操作（见 src/infra/prisma-extensions.ts）
+ * - 本文件继续提供 controller 显式调用的 logAudit（auth / AI config 等带请求上下文的关键操作）
  */
 
 import type { FastifyRequest } from 'fastify'
