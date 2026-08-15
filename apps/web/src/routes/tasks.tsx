@@ -435,7 +435,7 @@ export default function Tasks() {
       </Drawer>
 
       {/* Detail Drawer */}
-      <Drawer open={!!detailId} onClose={() => setDetailId(undefined)} title="任务详情">
+      <Drawer open={!!detailId} onClose={() => setDetailId(undefined)} title="任务详情" size="sm">
         {detailId && !detailItem && <LoadingState />}
         {detailItem && (
           <div className="space-y-5">

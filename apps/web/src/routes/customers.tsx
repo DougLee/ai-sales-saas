@@ -589,7 +589,7 @@ export default function Customers() {
       </div>
 
       {/* Detail Drawer */}
-      <Drawer open={!!detailId} onClose={() => { setDetailId(undefined); setMergeOpen(false) }} title="客户详情">
+      <Drawer open={!!detailId} onClose={() => { setDetailId(undefined); setMergeOpen(false) }} title="客户详情" size="md">
         {detailLoading && (
           <div className="flex items-center justify-center p-12">
             <Loader2 size={24} className="animate-spin text-primary" />

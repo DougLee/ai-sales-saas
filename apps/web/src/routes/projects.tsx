@@ -651,7 +651,7 @@ export default function Projects() {
 
       <ProjectForm open={open} onClose={handleClose} initialData={editingItem} />
 
-      <Drawer open={!!detailId} onClose={handleCloseDetail} title="商机详情" width="720px">
+      <Drawer open={!!detailId} onClose={handleCloseDetail} title="商机详情" size="lg">
         {detailId && !detailItem && <LoadingState />}
         {detailItem && (
           <div className="space-y-5">

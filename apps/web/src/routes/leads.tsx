@@ -572,255 +572,205 @@ export default function Leads() {
       </div>
       <LeadForm open={open} onClose={handleClose} initialData={editingItem} />
 
-      <Drawer open={!!detailId} onClose={() => setDetailId(undefined)} title="线索详情">
+      <Drawer open={!!detailId} onClose={() => setDetailId(undefined)} title="线索详情" size="md">
         {detailId && !detailItem && <LoadingState />}
         {detailItem && (
-          <div className="space-y-5">
-            <div className="flex items-start justify-between">
-              <div>
-                <label className="text-xs text-text-tertiary">线索名称</label>
-                <p className="text-base font-medium text-text-primary">{detailItem.name}</p>
-                {detailItem.company?.name && detailItem.company?.id && (
-                  <button
-                    onClick={() => navigate(`/customers?id=${detailItem.company!.id}`)}
-                    className="mt-0.5 flex items-center gap-1 text-xs text-primary hover:underline"
-                  >
-                    <Building2 size={11} /> {detailItem.company.name}（所属客户）
-                  </button>
-                )}
-              </div>
-              <div className="flex gap-2">
-                {detailItem.grade && (
-                  <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${gradeBadge(detailItem.grade)}`}>
-                    {detailItem.grade}级
-                  </span>
-                )}
-                <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-                  detailItem.status === 'FOLLOWING' ? 'bg-success/10 text-success' :
-                  detailItem.status === 'CONVERTED' ? 'bg-primary/10 text-primary' :
-                  detailItem.status === 'LOST' ? 'bg-danger/10 text-danger' :
-                  'bg-warning/10 text-warning'
-                }`}>
-                  {statusLabels[detailItem.status] || detailItem.status}
-                </span>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="text-xs text-text-tertiary">来源</label>
-                <p className="text-sm text-text-primary">{sourceLabels[detailItem.source] || detailItem.source}</p>
-              </div>
-              <div>
-                <label className="text-xs text-text-tertiary">完整度评分</label>
-                <p className="text-sm text-text-primary">{detailItem.completenessScore}</p>
-              </div>
-            </div>
-
-            {(detailItem.score !== undefined || detailItem.grade) && (
-              <div className="rounded-xl border border-border bg-surface p-4">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium text-text-primary">综合评分</p>
-                  <span className="text-xs text-text-tertiary">
-                    {detailItem.assessedBy === 'AI' ? 'AI 评估' : '规则评分'} · {detailItem.assessedAt ? new Date(detailItem.assessedAt).toLocaleString('zh-CN') : '-'}
-                  </span>
-                </div>
-                <div className="mt-2 flex items-baseline gap-2">
-                  {detailItem.score != null && detailItem.score > 0 ? (
-                    <>
-                      <span className="text-2xl font-bold text-text-primary">{detailItem.score}</span>
-                      <span className="text-sm text-text-secondary">分</span>
-                    </>
-                  ) : (
-                    <span className="text-lg font-medium text-text-tertiary">未评分</span>
-                  )}
-                  {detailItem.grade && (
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${gradeBadge(detailItem.grade)}`}>
-                      {detailItem.grade}级
-                    </span>
-                  )}
-                </div>
-              </div>
-            )}
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="text-xs text-text-tertiary">联系人</label>
-                <p className="text-sm text-text-primary">{detailItem.contactName || '-'}</p>
-              </div>
-              <div>
-                <label className="text-xs text-text-tertiary">职位</label>
-                <p className="text-sm text-text-primary">{detailItem.contactPosition || '-'}</p>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="text-xs text-text-tertiary">电话</label>
-                <p className="text-sm text-text-primary">{detailItem.contactPhone || '-'}</p>
-              </div>
-              <div>
-                <label className="text-xs text-text-tertiary">邮箱</label>
-                <p className="text-sm text-text-primary">{detailItem.contactEmail || '-'}</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="text-xs text-text-tertiary">决策人</label>
-                <p className="text-sm text-text-primary">{detailItem.humanInfo?.decisionMaker || '-'}</p>
-              </div>
-              <div>
-                <label className="text-xs text-text-tertiary">需求</label>
-                <p className="text-sm text-text-primary">{detailItem.businessInfo?.requirements || '-'}</p>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="text-xs text-text-tertiary">预算</label>
-                <p className="text-sm text-text-primary">{detailItem.financeInfo?.budget || detailItem.financeInfo?.budgetSource || '-'}</p>
-              </div>
-              <div>
-                <label className="text-xs text-text-tertiary">采购时间</label>
-                <p className="text-sm text-text-primary">{detailItem.businessInfo?.timeline || '-'}</p>
-              </div>
-            </div>
-
-            {detailItem.followUpCount > 0 && (
-              <div>
-                <label className="text-xs text-text-tertiary">跟进统计</label>
-                <p className="text-sm text-text-primary">
-                  {detailItem.followUpCount} 次跟进
-                  {detailItem.lastFollowUpAt && ` · 最近 ${new Date(detailItem.lastFollowUpAt).toLocaleString('zh-CN')}`}
-                </p>
-              </div>
-            )}
-
-            <div>
-              <label className="text-xs text-text-tertiary">备注</label>
-              <p className="text-sm text-text-primary whitespace-pre-wrap">{detailItem.notes || '-'}</p>
-            </div>
-
-            {(detailItem.status === 'NEW' || detailItem.status === 'PAUSED' || detailItem.status === 'LOST') && (
-              <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
-                <p className="text-sm text-text-secondary">
-                  {detailItem.status === 'LOST' ? '该线索已流失。' : '该线索在培育轨道中（未进入跟进）。'}
-                  {detailItem.status !== 'LOST' && ' 开始跟进后将进入转化门禁轨道。'}
-                </p>
-                <button
-                  onClick={() => updateLead.mutate({ id: detailItem.id, data: { status: 'FOLLOWING' } })}
-                  disabled={updateLead.isPending}
-                  className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
-                >
-                  <RefreshCw size={14} className={updateLead.isPending ? 'animate-spin' : ''} />
-                  {updateLead.isPending ? '激活中...' : detailItem.status === 'LOST' ? '重新打开（恢复跟进）' : '开始跟进（激活）'}
-                </button>
-              </div>
-            )}
-
-            {detailItem.status === 'FOLLOWING' && (
-              <>
-                <div className="rounded-xl border border-border bg-surface p-4 space-y-2">
-                  <p className="text-sm font-medium text-text-primary">转化条件检查</p>
-                  {checkReadiness(detailItem).map((check, idx) => (
-                    <div key={idx} className="flex items-center gap-2 text-sm">
-                      {check.pass ? (
-                        <CheckCircle2 size={14} className="text-success" />
-                      ) : (
-                        <AlertCircle size={14} className="text-warning" />
-                      )}
-                      <span className={check.pass ? 'text-text-secondary' : 'text-warning'}>{check.label}</span>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    onClick={() => handleScore(detailItem.id)}
-                    disabled={score.isPending}
-                    className="flex items-center gap-1.5 rounded-xl border border-border bg-surface px-3 py-2 text-sm font-medium text-text-secondary hover:bg-surface-elevated transition-colors disabled:opacity-50"
-                  >
-                    <Star size={14} /> 规则评分
-                  </button>
-                  <button
-                    onClick={() => handleAssess(detailItem.id)}
-                    disabled={assess.isPending}
-                    className="flex items-center gap-1.5 rounded-xl border border-border bg-surface px-3 py-2 text-sm font-medium text-text-secondary hover:bg-surface-elevated transition-colors disabled:opacity-50"
-                  >
-                    <BrainCircuit size={14} /> AI 评估
-                  </button>
-                  <button
-                    onClick={() => setFollowUpOpen(true)}
-                    className="flex items-center gap-1.5 rounded-xl border border-border bg-surface px-3 py-2 text-sm font-medium text-text-secondary hover:bg-surface-elevated transition-colors"
-                  >
-                    <MessageSquare size={14} /> 记录跟进
-                  </button>
-                  <button
-                    onClick={() => setLoseOpen(true)}
-                    className="flex items-center gap-1.5 rounded-xl border border-border bg-surface px-3 py-2 text-sm font-medium text-text-secondary hover:bg-surface-elevated transition-colors"
-                  >
-                    <XCircle size={14} /> 标记流失
-                  </button>
-                </div>
-
-                {assessmentJobId && job.data && (
-                  <div className="rounded-xl border border-border bg-surface p-3">
-                    <div className="flex items-center gap-2 text-sm">
-                      <RefreshCw size={14} className={job.data.status === 'running' || job.data.status === 'pending' ? 'animate-spin text-primary' : 'text-text-secondary'} />
-                      <span className="text-text-secondary">
-                        AI 评估：{job.data.status === 'pending' ? '排队中' : job.data.status === 'running' ? '评估中' : job.data.status === 'completed' ? `完成 ${job.data.score ?? ''}分 ${job.data.grade ?? ''}级` : `失败 ${job.data.error ?? ''}`}
+          /* 详情三区制（issue #37）：头区行动前置 / 体区分区栅格 / 尾区粘底行动条 */
+          <div className="flex min-h-[calc(100vh-3.5rem)] flex-col">
+            <div className="flex-1 space-y-5 pb-24">
+              {/* ── 头区：名称 + 徽章 + 主行动常驻 ── */}
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-base font-semibold text-text-primary">{detailItem.name}</p>
+                    {detailItem.grade && (
+                      <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${gradeBadge(detailItem.grade)}`}>
+                        {detailItem.grade}级
                       </span>
-                    </div>
+                    )}
+                    <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
+                      detailItem.status === 'FOLLOWING' ? 'bg-success/10 text-success' :
+                      detailItem.status === 'CONVERTED' ? 'bg-primary/10 text-primary' :
+                      detailItem.status === 'LOST' ? 'bg-danger/10 text-danger' :
+                      'bg-warning/10 text-warning'
+                    }`}>
+                      {statusLabels[detailItem.status] || detailItem.status}
+                    </span>
                   </div>
-                )}
-
-                {showForce ? (
-                  <div className="space-y-2">
-                    <textarea
-                      value={forceReason}
-                      onChange={(e) => setForceReason(e.target.value)}
-                      placeholder="强制转化原因（必填）"
-                      className="w-full rounded-xl border border-border bg-background px-4 py-2 text-sm text-text-primary outline-none focus:border-primary"
-                    />
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => { setShowForce(false); setForceReason('') }}
-                        className="flex-1 rounded-xl border border-border bg-surface px-4 py-2 text-sm text-text-secondary hover:bg-surface-elevated"
-                      >
-                        取消
-                      </button>
-                      <button
-                        onClick={() => handleConvert(detailItem, true)}
-                        disabled={convert.isPending || !forceReason.trim()}
-                        className="flex-1 rounded-xl bg-danger px-4 py-2 text-sm font-medium text-white hover:bg-danger/90 disabled:opacity-50"
-                      >
-                        {convert.isPending ? '转化中...' : '确认强制转化'}
-                      </button>
-                    </div>
-                  </div>
-                ) : (
+                  {detailItem.company?.name && detailItem.company?.id && (
+                    <button
+                      onClick={() => navigate(`/customers?id=${detailItem.company!.id}`)}
+                      className="mt-1 flex items-center gap-1 text-xs text-primary hover:underline"
+                    >
+                      <Building2 size={11} /> {detailItem.company.name}（所属客户）
+                    </button>
+                  )}
+                </div>
+                {detailItem.status === 'FOLLOWING' && !showForce && (
                   <button
                     onClick={() => handleConvert(detailItem)}
                     disabled={convert.isPending}
-                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white hover:bg-primary/90 transition-colors disabled:opacity-50"
+                    className="flex flex-none items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-50"
                   >
-                    {convert.isPending ? (
-                      <Loader2 size={16} className="animate-spin" />
-                    ) : (
-                      <ArrowRightLeft size={16} />
-                    )}
+                    {convert.isPending ? <Loader2 size={15} className="animate-spin" /> : <ArrowRightLeft size={15} />}
                     {convert.isPending ? '转化中...' : '转化为商机'}
                   </button>
                 )}
-                {!showForce && isAdmin && (
-                  <button
-                    onClick={() => setShowForce(true)}
-                    className="w-full text-center text-xs text-text-tertiary hover:text-text-secondary"
-                  >
-                    管理员强制转化
-                  </button>
+              </div>
+
+              {/* ── 评分条：完整度 + 综合评分合并为一条 ── */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-xl border border-border bg-surface-elevated/50 p-3">
+                  <p className="text-[11px] text-text-tertiary">完整度评分</p>
+                  <p className="mt-0.5 text-xl font-bold tabular-nums text-text-primary">{detailItem.completenessScore}</p>
+                </div>
+                <div className="rounded-xl border border-border bg-surface-elevated/50 p-3">
+                  <p className="text-[11px] text-text-tertiary">
+                    综合评分 {detailItem.score != null && detailItem.score > 0 ? `· ${detailItem.assessedBy === 'AI' ? 'AI 评估' : '规则评分'}` : ''}
+                  </p>
+                  {detailItem.score != null && detailItem.score > 0 ? (
+                    <p className="mt-0.5 text-xl font-bold tabular-nums text-text-primary">
+                      {detailItem.score}<span className="ml-1 text-xs font-normal text-text-tertiary">分</span>
+                    </p>
+                  ) : (
+                    <p className="mt-0.5 text-sm font-medium text-text-tertiary">未评分</p>
+                  )}
+                </div>
+                <div className="flex items-center justify-between rounded-xl border border-border bg-surface-elevated/50 px-3 py-2">
+                  <span className="text-[11px] text-text-tertiary">来源</span>
+                  <span className="text-xs font-medium text-text-secondary">{sourceLabels[detailItem.source] || detailItem.source}</span>
+                </div>
+                {detailItem.followUpCount > 0 && (
+                  <div className="flex items-center justify-between rounded-xl border border-border bg-surface-elevated/50 px-3 py-2">
+                    <span className="text-[11px] text-text-tertiary">跟进</span>
+                    <span className="text-xs font-medium text-text-secondary">
+                      {detailItem.followUpCount} 次{detailItem.lastFollowUpAt ? ` · ${new Date(detailItem.lastFollowUpAt).toLocaleDateString('zh-CN')}` : ''}
+                    </span>
+                  </div>
                 )}
-              </>
-            )}
+              </div>
+
+              {/* ── 体区：联系与决策（两列栅格） ── */}
+              <div>
+                <p className="mb-2 text-xs font-bold uppercase tracking-wide text-text-tertiary">联系与决策</p>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+                  {[
+                    { label: '联系人', value: detailItem.contactName },
+                    { label: '职位', value: detailItem.contactPosition },
+                    { label: '电话', value: detailItem.contactPhone },
+                    { label: '邮箱', value: detailItem.contactEmail },
+                    { label: '决策人', value: detailItem.humanInfo?.decisionMaker },
+                  ].map((f) => (
+                    <div key={f.label}>
+                      <label className="text-[11px] text-text-tertiary">{f.label}</label>
+                      <p className="mt-0.5 truncate text-sm text-text-primary" title={f.value}>{f.value || '—'}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* ── 体区：事与财 ── */}
+              <div>
+                <p className="mb-2 text-xs font-bold uppercase tracking-wide text-text-tertiary">事 · 财</p>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+                  {[
+                    { label: '需求方向', value: detailItem.businessInfo?.requirements },
+                    { label: '采购时间', value: detailItem.businessInfo?.timeline },
+                    { label: '预算', value: detailItem.financeInfo?.budget || detailItem.financeInfo?.budgetSource },
+                  ].map((f) => (
+                    <div key={f.label} className={f.label === '需求方向' ? 'col-span-2' : ''}>
+                      <label className="text-[11px] text-text-tertiary">{f.label}</label>
+                      <p className="mt-0.5 text-sm text-text-primary">{f.value || '—'}</p>
+                    </div>
+                  ))}
+                </div>
+                {detailItem.notes && (
+                  <div className="mt-3">
+                    <label className="text-[11px] text-text-tertiary">备注</label>
+                    <p className="mt-0.5 whitespace-pre-wrap text-sm text-text-secondary">{detailItem.notes}</p>
+                  </div>
+                )}
+              </div>
+
+              {(detailItem.status === 'NEW' || detailItem.status === 'PAUSED' || detailItem.status === 'LOST') && (
+                <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
+                  <p className="text-sm text-text-secondary">
+                    {detailItem.status === 'LOST' ? '该线索已流失。' : '该线索在培育轨道中（未进入跟进）。'}
+                    {detailItem.status !== 'LOST' && ' 开始跟进后将进入转化门禁轨道。'}
+                  </p>
+                  <button
+                    onClick={() => updateLead.mutate({ id: detailItem.id, data: { status: 'FOLLOWING' } })}
+                    disabled={updateLead.isPending}
+                    className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
+                  >
+                    <RefreshCw size={14} className={updateLead.isPending ? 'animate-spin' : ''} />
+                    {updateLead.isPending ? '激活中...' : detailItem.status === 'LOST' ? '重新打开（恢复跟进）' : '开始跟进（激活）'}
+                  </button>
+                </div>
+              )}
+
+              {detailItem.status === 'FOLLOWING' && (
+                <>
+                  {/* 转化条件检查：checklist 卡 */}
+                  <div className="rounded-xl border border-border bg-surface p-4">
+                    <div className="mb-2 flex items-center justify-between">
+                      <p className="text-sm font-medium text-text-primary">转化条件检查</p>
+                      <span className="text-[11px] text-text-tertiary">
+                        {checkReadiness(detailItem).filter((c) => c.pass).length}/{checkReadiness(detailItem).length} 达标
+                      </span>
+                    </div>
+                    <div className="space-y-1.5">
+                      {checkReadiness(detailItem).map((check, idx) => (
+                        <div key={idx} className="flex items-center gap-2 text-sm">
+                          {check.pass ? (
+                            <CheckCircle2 size={14} className="flex-none text-success" />
+                          ) : (
+                            <AlertCircle size={14} className="flex-none text-warning" />
+                          )}
+                          <span className={check.pass ? 'text-text-secondary' : 'text-warning'}>{check.label}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {assessmentJobId && job.data && (
+                    <div className="rounded-xl border border-border bg-surface p-3">
+                      <div className="flex items-center gap-2 text-sm">
+                        <RefreshCw size={14} className={job.data.status === 'running' || job.data.status === 'pending' ? 'animate-spin text-primary' : 'text-text-secondary'} />
+                        <span className="text-text-secondary">
+                          AI 评估：{job.data.status === 'pending' ? '排队中' : job.data.status === 'running' ? '评估中' : job.data.status === 'completed' ? `完成 ${job.data.score ?? ''}分 ${job.data.grade ?? ''}级` : `失败 ${job.data.error ?? ''}`}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {showForce && (
+                    <div className="space-y-2 rounded-xl border border-danger/20 bg-danger/5 p-3">
+                      <textarea
+                        value={forceReason}
+                        onChange={(e) => setForceReason(e.target.value)}
+                        placeholder="强制转化原因（必填）"
+                        className="w-full rounded-xl border border-border bg-background px-4 py-2 text-sm text-text-primary outline-none focus:border-primary"
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => { setShowForce(false); setForceReason('') }}
+                          className="flex-1 rounded-xl border border-border bg-surface px-4 py-2 text-sm text-text-secondary hover:bg-surface-elevated"
+                        >
+                          取消
+                        </button>
+                        <button
+                          onClick={() => handleConvert(detailItem, true)}
+                          disabled={convert.isPending || !forceReason.trim()}
+                          className="flex-1 rounded-xl bg-danger px-4 py-2 text-sm font-medium text-white hover:bg-danger/90 disabled:opacity-50"
+                        >
+                          {convert.isPending ? '转化中...' : '确认强制转化'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
 
             {detailItem.status === 'CONVERTED' && detailItem.convertedProjectId && (
               <button
@@ -881,6 +831,49 @@ export default function Leads() {
                       </div>
                     </div>
                   ))}
+                </div>
+              </div>
+            )}
+            </div>
+
+            {/* ── 尾区：粘底行动条（issue #37）——次级动作常驻，主行动在头区 ── */}
+            {detailItem.status === 'FOLLOWING' && (
+              <div className="sticky bottom-0 -mx-5 mt-2 flex items-center gap-2 border-t border-border bg-surface/95 px-5 py-3 backdrop-blur">
+                <button
+                  onClick={() => handleScore(detailItem.id)}
+                  disabled={score.isPending}
+                  className="flex items-center gap-1.5 rounded-xl border border-border bg-surface px-3 py-2 text-sm font-medium text-text-secondary transition-colors hover:bg-surface-elevated disabled:opacity-50"
+                >
+                  <Star size={14} /> 规则评分
+                </button>
+                <button
+                  onClick={() => handleAssess(detailItem.id)}
+                  disabled={assess.isPending}
+                  className="flex items-center gap-1.5 rounded-xl border border-border bg-surface px-3 py-2 text-sm font-medium text-text-secondary transition-colors hover:bg-surface-elevated disabled:opacity-50"
+                >
+                  <BrainCircuit size={14} /> AI 评估
+                </button>
+                <button
+                  onClick={() => setFollowUpOpen(true)}
+                  className="flex items-center gap-1.5 rounded-xl border border-border bg-surface px-3 py-2 text-sm font-medium text-text-secondary transition-colors hover:bg-surface-elevated"
+                >
+                  <MessageSquare size={14} /> 记录跟进
+                </button>
+                <div className="ml-auto flex items-center gap-2">
+                  {!showForce && isAdmin && (
+                    <button
+                      onClick={() => setShowForce(true)}
+                      className="text-xs text-text-tertiary transition-colors hover:text-text-secondary"
+                    >
+                      强制转化
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setLoseOpen(true)}
+                    className="flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-medium text-text-tertiary transition-colors hover:bg-danger/10 hover:text-danger"
+                  >
+                    <XCircle size={14} /> 标记流失
+                  </button>
                 </div>
               </div>
             )}
