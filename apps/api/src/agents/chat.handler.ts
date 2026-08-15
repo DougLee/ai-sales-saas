@@ -221,10 +221,17 @@ export async function chat(req: FastifyRequest, reply: FastifyReply) {
     let enrollNote: string | null = null
     if (intent.intent === 'customer_enroll') {
       try {
+        // 倒数第二条若为助手消息，作为指代消解上下文（#22："上边提到的"）
+        const prevMsgs = body.messages
+        const prevAssistant =
+          prevMsgs.length >= 2 && prevMsgs[prevMsgs.length - 2].role === 'assistant'
+            ? prevMsgs[prevMsgs.length - 2].content
+            : ''
         enrollNote = await handleCustomerEnroll({
           userMessage: lastMessage.content,
           sessionId,
           skillContext,
+          prevAssistantText: typeof prevAssistant === 'string' ? prevAssistant : '',
         })
       } catch (e) {
         chatLogger.warn({ err: e }, 'customer_enroll handler failed')
@@ -341,6 +348,15 @@ export async function chat(req: FastifyRequest, reply: FastifyReply) {
       reply.raw.write(value)
       assistantText += decoder.decode(value, { stream: true })
     }
+
+    // 确定性结果块（#23）：写操作的事实部分不由 LLM 生成——流末追加固定格式确认块并持久化
+    if (enrollNote) {
+      const block = `\n\n> ✅ **系统执行结果**：${enrollNote}`
+      const chunk = new TextEncoder().encode(block)
+      reply.raw.write(chunk)
+      assistantText += block
+    }
+
     reply.raw.end()
 
     chatLogger.debug(

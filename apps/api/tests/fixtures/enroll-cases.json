@@ -1,0 +1,92 @@
+{
+  "_meta": {
+    "description": "入库指令解析语料库（#24 棘轮）：每次事故/新发现的表述进这里，CI 永不再犯。新增语料只改本文件。",
+    "schema": {
+      "name": "用例名（事故原话优先）",
+      "message": "用户指令原文",
+      "candidates": "候选清单（可空数组）",
+      "expectNames": "期望解析出的目标名（按序）",
+      "expectEmpty": "期望解析为空（true 时不允许产生任何目标）"
+    }
+  },
+  "cases": [
+    {
+      "name": "事故#21：上边提到的前三个",
+      "message": "把上边提到的前三个客户入库",
+      "candidates": ["邯郸市中心医院", "河北工程大学", "邯郸学院", "邯郸职业技术学院"],
+      "expectNames": ["邯郸市中心医院", "河北工程大学", "邯郸学院"]
+    },
+    {
+      "name": "事故（更早）：第二家",
+      "message": "把第二家入库",
+      "candidates": ["甲公司", "乙公司", "丙公司"],
+      "expectNames": ["乙公司"]
+    },
+    {
+      "name": "前3家（阿拉伯数字）",
+      "message": "前3家入库",
+      "candidates": ["A大学", "B学院", "C学校", "D职院"],
+      "expectNames": ["A大学", "B学院", "C学校"]
+    },
+    {
+      "name": "第三个",
+      "message": "把第三个入库",
+      "candidates": ["A大学", "B学院", "C学校", "D职院"],
+      "expectNames": ["C学校"]
+    },
+    {
+      "name": "后两个",
+      "message": "后两个入库",
+      "candidates": ["A大学", "B学院", "C学校", "D职院"],
+      "expectNames": ["C学校", "D职院"]
+    },
+    {
+      "name": "超出候选数不入库",
+      "message": "前五个入库",
+      "candidates": ["A大学", "B学院", "C学校", "D职院"],
+      "expectEmpty": true
+    },
+    {
+      "name": "指示代词单独出现不建库",
+      "message": "把上边提到的入库",
+      "candidates": [],
+      "expectEmpty": true
+    },
+    {
+      "name": "动作碎片不当名称",
+      "message": "把都自动入库",
+      "candidates": [],
+      "expectEmpty": true
+    },
+    {
+      "name": "全部入库",
+      "message": "都入库",
+      "candidates": ["A大学", "B学院", "C学校"],
+      "expectNames": ["A大学", "B学院", "C学校"]
+    },
+    {
+      "name": "引号名称命中候选",
+      "message": "把「B学院」入库",
+      "candidates": ["A大学", "B学院", "C学校"],
+      "expectNames": ["B学院"]
+    },
+    {
+      "name": "引号新名称（origin=name，走确认流）",
+      "message": "把「郑州轻工业大学」入库",
+      "candidates": ["A大学", "B学院"],
+      "expectNames": ["郑州轻工业大学"]
+    },
+    {
+      "name": "无引号机构后缀整体捕获",
+      "message": "把开封大学入库",
+      "candidates": [],
+      "expectNames": ["开封大学"]
+    },
+    {
+      "name": "纯聊天不入库",
+      "message": "今天天气怎么样",
+      "candidates": ["A大学"],
+      "expectEmpty": true
+    }
+  ]
+}

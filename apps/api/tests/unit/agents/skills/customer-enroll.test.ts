@@ -1,5 +1,10 @@
-import { describe, it, expect } from 'vitest'
-import { resolveEnrollTargets } from '../../../../src/agents/skills/crm/customer-enroll.util.js'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { resolveEnrollTargets, resolveEnrollTargetsV2 } from '../../../../src/agents/skills/crm/customer-enroll.util.js'
+
+// mock LLM 依赖：resolveEnrollTargetsV2 的主路径（#22）
+const mockGenerateObject = vi.fn()
+vi.mock('ai', () => ({ generateObject: (...args: unknown[]) => mockGenerateObject(...args) }))
+vi.mock('../../../../src/config/model-provider.js', () => ({ createModel: () => ({}) }))
 
 /**
  * 回归：2026-08-15 事故——"把上边提到的前三个客户入库"
@@ -90,3 +95,56 @@ function isJunk(name: string): boolean {
     || /^上边|^上面|^前面|^刚才|^之前|^上述|^前文/.test(name)
     || /提到|自动|全部|这些|几个/.test(name)
 }
+
+describe('resolveEnrollTargetsV2 LLM 主路径（#22）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('指代解析为 slots（LLM 正确返回 slot refs）', async () => {
+    mockGenerateObject.mockResolvedValue({
+      object: {
+        action: 'enroll',
+        refs: [
+          { kind: 'slot', slot: 1 },
+          { kind: 'slot', slot: 2 },
+          { kind: 'slot', slot: 3 },
+        ],
+      },
+    })
+    const d = await resolveEnrollTargetsV2('把上边提到的前三个客户入库', cands)
+    expect(d.engine).toBe('llm')
+    expect(d.targets.map((t) => t.name)).toEqual(['邯郸市中心医院', '河北工程大学', '邯郸学院'])
+  })
+
+  it('越界 slot 不猜（第 7 个但只有 4 个候选 → 该 ref 跳过）', async () => {
+    mockGenerateObject.mockResolvedValue({
+      object: { action: 'enroll', refs: [{ kind: 'slot', slot: 7 }] },
+    })
+    const d = await resolveEnrollTargetsV2('把第七个入库', cands)
+    // LLM 结果为空 → 降级正则给出可解释原因
+    expect(d.targets).toHaveLength(0)
+  })
+
+  it('LLM 返回垃圾 name 被守卫拦截 → 降级', async () => {
+    mockGenerateObject.mockResolvedValue({
+      object: { action: 'enroll', refs: [{ kind: 'name', name: '上边提到的前三个' }] },
+    })
+    const d = await resolveEnrollTargetsV2('随便入库', cands)
+    expect(d.targets.every((t) => t.name !== '上边提到的前三个')).toBe(true)
+  })
+
+  it('LLM 判定 unknown 且正则有高置信结果 → llm-fallback-regex', async () => {
+    mockGenerateObject.mockResolvedValue({ object: { action: 'unknown', refs: [] } })
+    const d = await resolveEnrollTargetsV2('全部入库', cands)
+    expect(d.engine).toBe('llm-fallback-regex')
+    expect(d.targets).toHaveLength(4)
+  })
+
+  it('LLM 异常 → 纯正则兜底（engine=regex）', async () => {
+    mockGenerateObject.mockRejectedValue(new Error('api down'))
+    const d = await resolveEnrollTargetsV2('把第二家入库', cands)
+    expect(d.engine).toBe('regex')
+    expect(d.targets.map((t) => t.name)).toEqual(['河北工程大学'])
+  })
+})
