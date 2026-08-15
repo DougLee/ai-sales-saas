@@ -13,6 +13,8 @@ import {
   AlertCircle,
   RefreshCw,
   FileText,
+  Search,
+  AlertTriangle,
 } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
@@ -26,6 +28,7 @@ import {
   useLeadFollowUps,
   useLeadLose,
   useLeadTimeline,
+  useLeadMetrics,
   type Lead,
   type LeadFollowUp,
 } from '../hooks/use-leads.js'
@@ -49,7 +52,9 @@ const statusLabels: Record<string, string> = {
 }
 
 const sourceLabels: Record<string, string> = {
-  cold_call: ' cold call',
+  visit_discovery: '拜访发现',
+  ai_collected: '小销收集',
+  cold_call: '电话开发',
   referral: '客户推荐',
   exhibition: '展会活动',
   online: '线上推广',
@@ -95,13 +100,11 @@ function checkReadiness(lead: Lead) {
     label: '识别关键决策人',
     pass: !!lead.humanInfo?.decisionMaker?.trim(),
   })
-  checks.push({
-    label: '预算信号已知',
-    pass: !!(lead.financeInfo?.budget?.trim() || lead.financeInfo?.budgetSource?.trim()),
-  })
+  // ADR-0002 决策 1：预算信号为软提示（见转化弹窗），不再计入硬性检查
   return checks
 }
 
+/** ADR-0002：转化门禁 5 条 + 预算软提示（与后端 checkConversionReadiness 同口径） */
 function checkConvertReadiness(lead: Lead): string[] {
   const missing: string[] = []
   if ((lead.score ?? 0) < 60 && lead.completenessScore < 60) {
@@ -119,9 +122,6 @@ function checkConvertReadiness(lead: Lead): string[] {
   if (!lead.humanInfo?.decisionMaker?.trim()) {
     missing.push('人：需识别决策链中的关键角色')
   }
-  if (!lead.financeInfo?.budget?.trim() && !lead.financeInfo?.budgetSource?.trim()) {
-    missing.push('财：需确认预算信号')
-  }
   return missing
 }
 
@@ -132,9 +132,11 @@ export default function Leads() {
   const [editingItem, setEditingItem] = useState<Partial<Lead> | undefined>(undefined)
   const [detailId, setDetailId] = useState<string | undefined>(undefined)
   const [searchParams, setSearchParams] = useSearchParams()
-  // P1：筛选状态进 URL，刷新/分享链接不丢筛选
-  const statusFilter = searchParams.get('status') || ''
+  // P1：筛选状态进 URL；页签（ADR-0002 设计稿）：跟进中/可转化/培育中/已转化/已流失
+  const tab = searchParams.get('tab') || 'following'
   const gradeFilter = searchParams.get('grade') || ''
+  const sourceFilter = searchParams.get('source') || ''
+  const [page, setPage] = useState(1)
   const setFilterParam = (key: string, value: string) => {
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev)
@@ -143,8 +145,9 @@ export default function Leads() {
       return next
     }, { replace: true })
   }
-  const setStatusFilter = (v: string) => setFilterParam('status', v)
+  const setStatusFilter = (v: string) => setFilterParam('tab', v)
   const setGradeFilter = (v: string) => setFilterParam('grade', v)
+  const setSourceFilter = (v: string) => setFilterParam('source', v)
   const [followUpOpen, setFollowUpOpen] = useState(false)
   const [loseOpen, setLoseOpen] = useState(false)
   const [loseReason, setLoseReason] = useState('')
@@ -156,9 +159,21 @@ export default function Leads() {
   const navigate = useNavigate()
 
   const isAdmin = useHasRole('TENANT_ADMIN', 'SUPER_ADMIN', 'DEPT_HEAD')
-  const { data, isLoading, error } = useLeads({ search: debouncedSearch, status: statusFilter, grade: gradeFilter })
+  const { data, isLoading, error } = useLeads({
+    search: debouncedSearch,
+    status: tab === 'following' ? 'FOLLOWING' : tab === 'converted' ? 'CONVERTED' : tab === 'lost' ? 'LOST' : undefined,
+    statusIn: tab === 'nurturing' ? 'NEW,PAUSED' : undefined,
+    ready: tab === 'convertible' ? 'true' : undefined,
+    grade: gradeFilter || undefined,
+    source: sourceFilter || undefined,
+    page,
+  })
+  const { data: metrics } = useLeadMetrics()
   // P1：详情走独立查询，评分/AI评估/跟进/转化后随失效矩阵自动刷新
   const { data: detailItem } = useLead(detailId)
+
+  // 切页签/筛选回第一页
+  useEffect(() => { setPage(1) }, [tab, gradeFilter, sourceFilter, debouncedSearch])
 
   const leadId = searchParams.get('id')
   useEffect(() => {
@@ -241,40 +256,13 @@ export default function Leads() {
 
   return (
     <div className="space-y-4">
+      {/* 页头 */}
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold text-text-primary">线索管理</h2>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative">
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="搜索线索..."
-              className="h-10 rounded-xl border border-border bg-surface px-4 text-sm text-text-primary outline-none placeholder:text-text-tertiary focus:border-primary"
-            />
-          </div>
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="h-10 rounded-xl border border-border bg-surface px-3 text-sm text-text-primary outline-none focus:border-primary"
-          >
-            <option value="">全部状态</option>
-            <option value="NEW">新建</option>
-            <option value="FOLLOWING">跟进中</option>
-            <option value="CONVERTED">已转化</option>
-            <option value="LOST">已关闭</option>
-            <option value="PAUSED">暂停</option>
-          </select>
-          <select
-            value={gradeFilter}
-            onChange={(e) => setGradeFilter(e.target.value)}
-            className="h-10 rounded-xl border border-border bg-surface px-3 text-sm text-text-primary outline-none focus:border-primary"
-          >
-            <option value="">全部等级</option>
-            <option value="A">A 级</option>
-            <option value="B">B 级</option>
-            <option value="C">C 级</option>
-          </select>
+        <div className="flex items-center gap-3">
+          <h2 className="text-xl font-semibold text-text-primary">线索管理</h2>
+          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">L1 · 机会信号层</span>
+        </div>
+        <div className="flex items-center gap-2">
           <AiEntryButton
             prompt="帮我分析当前线索池，哪些线索值得优先跟进"
             label="问小销"
@@ -290,102 +278,306 @@ export default function Leads() {
         </div>
       </div>
 
-      <div className="rounded-2xl border border-border bg-surface">
-        <div className="flex items-center justify-between border-b border-border px-6 py-4">
-          <span className="text-sm text-text-tertiary">
-            {isLoading ? '加载中...' : `共 ${data?.total || 0} 条线索`}
-          </span>
+      {/* 页签：状态即视图，可转化绿字突出 */}
+      <div className="flex items-center gap-1 border-b border-border">
+        {([
+          { key: 'following', label: '跟进中', cnt: metrics?.counts.following, hot: false },
+          { key: 'convertible', label: '可转化', cnt: metrics?.counts.convertible, hot: true },
+          { key: 'nurturing', label: '培育中', cnt: metrics?.counts.nurturing, hot: false },
+          { key: 'converted', label: '已转化', cnt: metrics?.counts.converted, hot: false },
+          { key: 'lost', label: '已流失', cnt: metrics?.counts.lost, hot: false },
+        ] as const).map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setStatusFilter(t.key)}
+            className={`-mb-px border-b-2 px-3.5 py-2 text-sm transition-colors ${
+              tab === t.key
+                ? 'border-primary font-medium text-primary'
+                : 'border-transparent text-text-secondary hover:text-text-primary'
+            }`}
+          >
+            {t.label}
+            <span className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[11px] ${
+              t.hot && (t.cnt ?? 0) > 0
+                ? 'bg-success/15 font-bold text-success'
+                : tab === t.key ? 'bg-primary/10 text-primary' : 'bg-surface-elevated text-text-tertiary'
+            }`}>
+              {t.cnt ?? '-'}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      {/* 指标条（L1 专属） */}
+      {metrics && (
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+          <div className="rounded-xl border border-border bg-surface p-3.5">
+            <p className="text-xl font-bold text-text-primary">
+              {metrics.following}
+              {metrics.weeklyNew > 0 && <span className="ml-1.5 text-[11px] font-medium text-success">本周 +{metrics.weeklyNew}</span>}
+            </p>
+            <p className="mt-0.5 text-xs text-text-secondary">跟进中线索</p>
+          </div>
+          <div className="rounded-xl border border-border bg-surface p-3.5">
+            <p className="text-xl font-bold text-[#d97706]">{metrics.gradeA}</p>
+            <p className="mt-0.5 text-xs text-text-secondary">A 级（本周必跟）</p>
+          </div>
+          <div className="rounded-xl border border-border bg-surface p-3.5">
+            <p className="text-xl font-bold text-success">{metrics.convertible}</p>
+            <p className="mt-0.5 text-xs text-text-secondary">已过转化门禁，待转商机</p>
+          </div>
+          <div className="rounded-xl border border-border bg-surface p-3.5">
+            <p className={`text-xl font-bold ${metrics.aging > 0 ? 'text-warning' : 'text-text-primary'}`}>{metrics.aging}</p>
+            <p className="mt-0.5 text-xs text-text-secondary">老化预警（超期未跟进）</p>
+          </div>
+          <div className="rounded-xl border border-border bg-surface p-3.5">
+            <p className="text-xl font-bold text-text-primary">{metrics.conversionRate2}%</p>
+            <p className="mt-0.5 text-xs text-text-secondary">转化率②（线索 → 商机，本月）</p>
+          </div>
+        </div>
+      )}
+
+      {/* 筛选栏 */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative min-w-[200px] flex-1">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="搜索线索名称 / 联系人"
+            className="h-9 w-full rounded-lg border border-border bg-surface pl-9 pr-3 text-sm text-text-primary outline-none placeholder:text-text-tertiary focus:border-primary"
+          />
+        </div>
+        {(['A', 'B', 'C'] as const).map((g) => (
+          <button
+            key={g}
+            onClick={() => setGradeFilter(gradeFilter === g ? '' : g)}
+            className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+              gradeFilter === g
+                ? g === 'A' ? 'border-[#f59e0b] bg-[#fef3c7] font-bold text-[#92400e]'
+                  : g === 'B' ? 'border-[#3b82f6] bg-[#dbeafe] font-bold text-[#1d4ed8]'
+                  : 'border-border bg-surface-elevated font-bold text-text-secondary'
+                : 'border-border bg-surface text-text-tertiary hover:text-text-secondary'
+            }`}
+          >
+            {g} 级
+          </button>
+        ))}
+        <select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)} className="h-9 rounded-lg border border-border bg-surface px-2 text-xs text-text-secondary outline-none focus:border-primary cursor-pointer" title="来源">
+          <option value="">来源：全部</option>
+          <option value="visit_discovery">拜访发现</option>
+          <option value="cold_call">电话开发</option>
+          <option value="referral">转介绍</option>
+          <option value="exhibition">展会活动</option>
+          <option value="official_website">官网咨询</option>
+          <option value="ai_collected">小销收集</option>
+          <option value="partner">合作伙伴</option>
+        </select>
+      </div>
+
+      {/* 数据表 */}
+      <div className="overflow-hidden rounded-2xl border border-border bg-surface">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[1020px] border-collapse text-sm">
+            <thead>
+              <tr className="border-y border-border bg-surface-elevated/60 text-left text-xs font-medium text-text-secondary">
+                <th className="px-3 py-2.5">线索 / 所属客户</th>
+                <th className="px-3 py-2.5">质量分</th>
+                <th className="px-3 py-2.5">四要素</th>
+                <th className="px-3 py-2.5">联系人</th>
+                <th className="px-3 py-2.5">7 步进度</th>
+                <th className="px-3 py-2.5">转化门禁</th>
+                <th className="px-3 py-2.5">最近跟进</th>
+                <th className="px-3 py-2.5 text-right">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data?.items.map((lead) => {
+                const d = lead.derivation
+                const ready = d?.gate.passed === d?.gate.total
+                return (
+                  <tr
+                    key={lead.id}
+                    className={`border-b border-border/60 transition-colors last:border-0 hover:bg-primary/[0.03] ${
+                      ready && lead.status === 'FOLLOWING' ? 'bg-success/[0.04]' : ''
+                    }`}
+                  >
+                    <td className="px-3 py-2.5">
+                      <button onClick={() => setDetailId(lead.id)} className="text-left font-medium text-primary hover:underline">
+                        {lead.name}
+                      </button>
+                      <p className="text-[11px] text-text-tertiary">
+                        {lead.company?.name || '无关联客户'} · {sourceLabels[lead.source] || lead.source}
+                      </p>
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <span className={`text-base font-extrabold ${
+                        lead.grade === 'A' ? 'text-[#d97706]' : lead.grade === 'B' ? 'text-primary' : 'text-text-tertiary'
+                      }`}>
+                        {lead.score ?? '-'}
+                      </span>
+                      {lead.grade && (
+                        <span className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
+                          lead.grade === 'A' ? 'bg-[#fef3c7] text-[#92400e]' : lead.grade === 'B' ? 'bg-[#dbeafe] text-[#1d4ed8]' : 'bg-surface-elevated text-text-tertiary'
+                        }`}>{lead.grade}</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <div className="flex gap-0.5" title="四要素：人 / 事 / 财 / 决策链">
+                        {d ? ([
+                          ['人', d.fourElements.person],
+                          ['事', d.fourElements.business],
+                          ['财', d.fourElements.finance],
+                          ['决', d.fourElements.decisionChain],
+                        ] as const).map(([label, st]) => (
+                          <i
+                            key={label}
+                            className={`flex h-4 w-4 items-center justify-center rounded text-[9px] font-bold ${
+                              st === 'ready' ? 'bg-success text-white'
+                              : st === 'partial' ? 'bg-warning/80 text-white'
+                              : 'bg-border text-text-tertiary'
+                            }`}
+                          >
+                            {label}
+                          </i>
+                        )) : <span className="text-[11px] text-text-tertiary">-</span>}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2.5">
+                      {lead.contactName ? (
+                        <>
+                          <p className="text-xs text-text-primary">{lead.contactName}</p>
+                          {lead.contactPosition && <p className="text-[11px] text-text-tertiary">{lead.contactPosition}</p>}
+                        </>
+                      ) : (
+                        <span className="text-[11px] text-text-tertiary">待补充</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      {d && (
+                        <>
+                          <div className="flex gap-0.5">
+                            {Array.from({ length: 7 }, (_, i) => (
+                              <i
+                                key={i}
+                                className={`h-1.5 w-2 rounded-sm ${
+                                  i + 1 < d.currentStep.step ? 'bg-primary'
+                                  : i + 1 === d.currentStep.step ? 'bg-primary ring-2 ring-primary/25'
+                                  : 'bg-border'
+                                }`}
+                              />
+                            ))}
+                          </div>
+                          <p className="mt-0.5 text-[11px] text-text-tertiary">Step {d.currentStep.step} · {d.currentStep.label}</p>
+                        </>
+                      )}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      {d && (
+                        <>
+                          <p className={`text-xs font-bold ${ready ? 'text-success' : 'text-text-tertiary font-normal'}`}>
+                            {d.gate.passed}/{d.gate.total}{ready ? ' · 达标' : ''}
+                          </p>
+                          {!ready && d.gate.missing.length > 0 && (
+                            <p className="max-w-[160px] truncate text-[11px] text-text-tertiary" title={d.gate.missing.join('；')}>
+                              缺：{d.gate.missing.map((m) => m.replace(/（.*$/, '')).join('、')}
+                            </p>
+                          )}
+                        </>
+                      )}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <p className="text-xs text-text-secondary">
+                        {lead.followUpCount > 0 ? `${lead.followUpCount} 次跟进` : '未跟进'}
+                        {lead.lastFollowUpAt && ` · ${new Date(lead.lastFollowUpAt).toLocaleDateString('zh-CN')}`}
+                      </p>
+                      {d?.aging === 'overdue' && <p className="flex items-center gap-0.5 text-[11px] text-danger"><AlertTriangle size={10} /> 超期未跟进</p>}
+                      {d?.aging === 'warning' && <p className="flex items-center gap-0.5 text-[11px] text-warning"><AlertTriangle size={10} /> 临近老化</p>}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <div className="flex items-center justify-end gap-2 whitespace-nowrap">
+                        {ready && lead.status === 'FOLLOWING' ? (
+                          <button
+                            onClick={() => handleConvert(lead)}
+                            disabled={convert.isPending}
+                            className="rounded-md bg-success px-2 py-0.5 text-xs font-semibold text-white transition-colors hover:bg-success/90 disabled:opacity-50"
+                          >
+                            转商机
+                          </button>
+                        ) : lead.status === 'FOLLOWING' ? (
+                          <button
+                            onClick={() => { setDetailId(lead.id); setFollowUpOpen(true) }}
+                            className="text-xs text-primary hover:underline"
+                          >
+                            跟进
+                          </button>
+                        ) : null}
+                        <AiEntryButton
+                          prompt={`请帮我评估这条线索：${lead.name}，联系人 ${lead.contactName || '暂无'}，当前评分 ${lead.score ?? '未评'}`}
+                          label="AI 评估"
+                          variant="ghost"
+                          entityType="lead"
+                          entityId={lead.id}
+                        />
+                        <button onClick={() => setDetailId(lead.id)} className="text-xs text-primary hover:underline">详情</button>
+                        <button
+                          onClick={() => handleEdit(lead)}
+                          className="rounded-md p-1 text-text-tertiary transition-colors hover:bg-surface-elevated hover:text-text-secondary"
+                          title="编辑线索"
+                        >
+                          <Pencil size={13} />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(lead.id)}
+                          className="rounded-md p-1 text-text-tertiary transition-colors hover:bg-danger/10 hover:text-danger"
+                          title="删除线索"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
         </div>
 
         {isLoading && <LoadingState />}
-
         {error && <ErrorState message={(error as Error).message || '加载失败'} />}
-
         {!isLoading && !error && data?.items.length === 0 && (
           <EmptyState
             icon={FileText}
-            title="暂无线索数据"
-            description="点击右上角「新建线索」开始录入"
+            title={tab === 'convertible' ? '暂无可转化线索' : '暂无线索数据'}
+            description={tab === 'convertible' ? '门禁 5/5 的线索会出现在这里——按四要素短板补齐即可' : '点击右上角「新建线索」，或从目标客户池行内「建线索」开始'}
           />
         )}
 
-        {!isLoading && !error && data && data.items.length > 0 && (
-          <div className="divide-y divide-border">
-            {data.items.map((lead) => (
-              <div key={lead.id} className="flex items-center justify-between px-6 py-4 hover:bg-surface-elevated/50 transition-colors cursor-pointer" onClick={() => setDetailId(lead.id)}>
-                <div className="flex items-center gap-4">
-                  <div>
-                    <p className="font-medium text-text-primary">{lead.name}</p>
-                    <p className="text-sm text-text-secondary">
-                      {lead.contactName || '暂无联系人'} · {lead.contactPhone || '无电话'}
-                      {lead.company?.name && <span className="ml-2 text-text-tertiary">· {lead.company.name}</span>}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {lead.grade && (
-                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${gradeBadge(lead.grade)}`}>
-                        {lead.grade}级
-                      </span>
-                    )}
-                    {lead.score != null && lead.score > 0 ? (
-                      <span className="text-xs text-text-secondary">{lead.score}分</span>
-                    ) : (
-                      <span className="text-xs text-text-tertiary">未评分</span>
-                    )}
-                    {lead.followUpCount > 0 && (
-                      <span className="flex items-center gap-1 text-xs text-text-secondary">
-                        <MessageSquare size={12} /> {lead.followUpCount}
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                  <AiEntryButton
-                    prompt={`请帮我评估这条线索：${lead.name}，联系人 ${lead.contactName || '暂无'}，电话 ${lead.contactPhone || '暂无'}`}
-                    label="问小销"
-                    variant="ghost"
-                    entityType="lead"
-                    entityId={lead.id}
-                  />
-                  <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-                    lead.status === 'FOLLOWING' ? 'bg-success/10 text-success' :
-                    lead.status === 'NEW' ? 'bg-primary/10 text-primary' :
-                    lead.status === 'CONVERTED' ? 'bg-primary/10 text-primary' :
-                    lead.status === 'PAUSED' ? 'bg-warning/10 text-warning' :
-                    lead.status === 'LOST' ? 'bg-danger/10 text-danger' :
-                    'bg-text-tertiary/10 text-text-tertiary'
-                  }`}>
-                    {statusLabels[lead.status] || lead.status}
-                  </span>
-                  {lead.status === 'FOLLOWING' && (
-                    <button
-                      onClick={() => handleConvert(lead)}
-                      disabled={convert.isPending}
-                      className="rounded-lg p-1.5 text-primary hover:bg-primary/10 transition-colors disabled:opacity-50"
-                      title="转化为商机"
-                    >
-                      <ArrowRightLeft size={14} />
-                    </button>
-                  )}
-                  <button
-                    onClick={() => handleEdit(lead)}
-                    className="rounded-lg p-1.5 text-text-tertiary hover:bg-surface-elevated hover:text-text-secondary transition-colors"
-                  >
-                    <Pencil size={14} />
-                  </button>
-                  <button
-                    onClick={() => handleDelete(lead.id)}
-                    className="rounded-lg p-1.5 text-text-tertiary hover:bg-danger/10 hover:text-danger transition-colors"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              </div>
-            ))}
+        {/* 分页 */}
+        {!isLoading && (data?.total ?? 0) > 0 && (
+          <div className="flex items-center gap-3 border-t border-border px-4 py-2.5 text-xs text-text-secondary">
+            <span>共 {data?.total ?? 0} 条</span>
+            <div className="ml-auto flex items-center gap-1">
+              <button
+                onClick={() => setPage((p) => Math.max(p - 1, 1))}
+                disabled={page <= 1}
+                className="rounded-md border border-border bg-surface px-2 py-0.5 transition-colors hover:border-primary/40 hover:text-primary disabled:opacity-40"
+              >
+                ‹
+              </button>
+              <span className="px-1">{page} / {Math.max(Math.ceil((data?.total ?? 0) / 20), 1)}</span>
+              <button
+                onClick={() => setPage((p) => p + 1)}
+                disabled={page >= Math.ceil((data?.total ?? 0) / 20)}
+                className="rounded-md border border-border bg-surface px-2 py-0.5 transition-colors hover:border-primary/40 hover:text-primary disabled:opacity-40"
+              >
+                ›
+              </button>
+            </div>
           </div>
         )}
       </div>
-
       <LeadForm open={open} onClose={handleClose} initialData={editingItem} />
 
       <Drawer open={!!detailId} onClose={() => setDetailId(undefined)} title="线索详情">

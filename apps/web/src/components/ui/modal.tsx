@@ -7,15 +7,17 @@ interface ModalProps {
   onClose: () => void
   title: string
   children: ReactNode
+  /** 覆盖面板宽度（Tailwind 宽度类），如 "max-w-4xl" */
+  panelClassName?: string
 }
 
-export default function Modal({ open, onClose, title, children }: ModalProps) {
+export default function Modal({ open, onClose, title, children, panelClassName }: ModalProps) {
   return (
     <DialogBase
       open={open}
       onClose={onClose}
       label={title}
-      panelClassName="w-full max-w-lg rounded-2xl border border-border bg-surface p-6 shadow-xl"
+      panelClassName={panelClassName || 'w-full max-w-lg rounded-2xl border border-border bg-surface p-6 shadow-xl'}
     >
       <div className="mb-5 flex items-center justify-between">
         <h3 className="text-lg font-semibold text-text-primary">{title}</h3>

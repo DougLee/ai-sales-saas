@@ -8,6 +8,10 @@ export interface LeadHumanInfo {
   decisionChain?: string
   supporter?: string
   opponent?: string
+  /** 角色定位：关系切入者 / 重要影响力者 / 决策者（ADR-0002） */
+  contactRole?: string
+  /** 性格类型：老虎/孔雀/猫头鹰/考拉（选填） */
+  personality?: string
 }
 
 export interface LeadBusinessInfo {
@@ -15,12 +19,24 @@ export interface LeadBusinessInfo {
   timeline?: string
   painPoints?: string
   expectedOutcome?: string
+  /** 竞品动向（选填，自由文本） */
+  competitors?: string
 }
 
 export interface LeadFinanceInfo {
   budget?: string
   budgetSource?: string
   approvalProcess?: string
+  /** 预算信号四档：none / mentioned / range / confirmed（ADR-0002 决策 4） */
+  budgetSignal?: string
+}
+
+/** 列表推导字段（后端 leads.derivation.service 计算） */
+export interface LeadDerivation {
+  fourElements: { person: string; business: string; finance: string; decisionChain: string }
+  gate: { passed: number; total: number; missing: string[]; softHints: string[] }
+  currentStep: { step: number; label: string }
+  aging: 'ok' | 'warning' | 'overdue'
 }
 
 export interface Lead {
@@ -49,6 +65,8 @@ export interface Lead {
   humanInfo: LeadHumanInfo
   businessInfo: LeadBusinessInfo
   financeInfo: LeadFinanceInfo
+  /** 列表接口附带的推导字段（四要素/门禁/7步/老化） */
+  derivation?: LeadDerivation
   createdAt: string
   updatedAt: string
 }
@@ -85,11 +103,15 @@ export interface ScoreBreakdown {
   grade: 'A' | 'B' | 'C'
 }
 
-export function useLeads(params?: { status?: string; grade?: string; search?: string }) {
+export function useLeads(params?: { status?: string; statusIn?: string; ready?: string; grade?: string; source?: string; search?: string; page?: number }) {
   const queryString = new URLSearchParams()
   if (params?.status) queryString.set('status', params.status)
+  if (params?.statusIn) queryString.set('statusIn', params.statusIn)
+  if (params?.ready) queryString.set('ready', params.ready)
   if (params?.grade) queryString.set('grade', params.grade)
+  if (params?.source) queryString.set('source', params.source)
   if (params?.search) queryString.set('search', params.search)
+  if (params?.page) queryString.set('page', String(params.page))
 
   return useQuery({
     queryKey: ['leads', params],
@@ -106,6 +128,23 @@ export function useLead(id?: string) {
     queryKey: ['lead', id],
     queryFn: () => get<Lead>(`/api/leads/${id}`),
     enabled: !!id,
+  })
+}
+
+/** 线索指标条（L1 专属）：跟进中/A 级/可转化/老化/转化率②（ADR-0002） */
+export function useLeadMetrics() {
+  return useQuery({
+    queryKey: ['lead-metrics'],
+    queryFn: () =>
+      get<{
+        following: number
+        weeklyNew: number
+        gradeA: number
+        convertible: number
+        aging: number
+        conversionRate2: number
+        counts: { following: number; convertible: number; nurturing: number; converted: number; lost: number }
+      }>('/api/leads/metrics'),
   })
 }
 
