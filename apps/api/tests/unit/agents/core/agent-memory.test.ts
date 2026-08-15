@@ -4,6 +4,7 @@ const mockRedis = vi.hoisted(() => ({
   get: vi.fn(),
   setex: vi.fn(),
   del: vi.fn(),
+  keys: vi.fn().mockResolvedValue([]),
 }))
 
 vi.mock('ioredis', () => ({
