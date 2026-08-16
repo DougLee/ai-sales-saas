@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plus, Search, Loader2, Trash2, Users, Phone, MapPin, FolderOpen, User, ArrowRight, Pencil, Calendar, Flag, Hand, UserX, AlertTriangle, GitMerge, Bot } from 'lucide-react'
+import { Plus, Search, Loader2, Trash2, Users, MapPin, FolderOpen, ArrowRight, Pencil, Calendar, Flag, Hand, UserX, AlertTriangle, GitMerge, Bot, History, Check, RefreshCw, XCircle } from 'lucide-react'
 import { useCompanies, useDeleteCompany, useClaimCompany, useAssignCompany, useUpdateCompanyStatus, useCompanyMissingFields, useCompanyChangeHistory, useMergeCompany, useCompanyDuplicates, useCompanyMetrics, useBatchCompany, useAssignableUsers } from '../hooks/use-companies.js'
 import { useCompany } from '../hooks/use-companies.js'
 import { useCanAssign } from '../hooks/use-permission.js'
@@ -16,6 +16,8 @@ import { EmptyState, LoadingState, ErrorState } from '../components/ui/states.js
 import { useConfirmDialog } from '../hooks/use-confirm-dialog.js'
 import { TimelineView } from '../components/timeline/timeline-view.js'
 import { ViewTabs, Pagination } from '../components/ui/tabs.js'
+import { DetailLayout, DetailSection, DetailCollapsible, DetailKpiRow, DetailField, DetailFieldGrid, type DetailMenuItem } from '../components/detail/detail-layout.js'
+import DecisionChainMatrix from '../components/detail/decision-chain-matrix.js'
 
 const industryLabels: Record<string, string> = {
   education: '教育',
@@ -38,12 +40,6 @@ const urgencyLabels: Record<string, string> = {
   MEDIUM: '中',
   HIGH: '高',
   CRITICAL: '紧急',
-}
-
-const decisionRoleLabels: Record<string, string> = {
-  COACH: '引导者',
-  EVALUATOR: '评估者',
-  DECISION_MAKER: '决策者',
 }
 
 const statusLabels: Record<string, string> = {
@@ -592,83 +588,132 @@ export default function Customers() {
         )}
       </div>
 
-      {/* Detail Drawer */}
-      <Drawer open={!!detailId} onClose={() => { setDetailId(undefined); setMergeOpen(false) }} title="客户详情">
+      {/* Detail Drawer（D2 标准详情 40rem：头区主行动 / 体区两列栅格 / 尾区粘底行动条） */}
+      <Drawer open={!!detailId} onClose={() => { setDetailId(undefined); setMergeOpen(false) }} title="客户详情" size="md">
         {detailLoading && (
           <div className="flex items-center justify-center p-12">
             <Loader2 size={24} className="animate-spin text-primary" />
           </div>
         )}
 
-        {detailData && (
-          <div className="space-y-6">
-            {/* Header */}
-            <div className="flex items-start justify-between">
-              <div>
-                <h3 className="text-lg font-semibold text-text-primary">{detailData.company.name}</h3>
-                <div className="mt-1 flex items-center gap-3 text-sm text-text-secondary">
-                  {detailData.company.industry && <span>{industryLabels[detailData.company.industry] || detailData.company.industry}</span>}
-                  {detailData.company.scale && <span>· {detailData.company.scale}</span>}
-                  {detailData.company.region && (
-                    <span className="flex items-center gap-1">
-                      <MapPin size={12} /> {detailData.company.region}
+        {detailData && (() => {
+          const company = detailData.company
+          const status = company.status || 'target'
+          const completenessScore = detailData.completeness?.score ?? company.completenessScore ?? 0
+          // ⋯ 菜单：状态切换 / 释放 / 合并重复等非主行动操作收进来（危险动作一律进菜单）
+          const menuItems: DetailMenuItem[] = []
+          if (!detailData._readonly && company.ownerId) {
+            if (status === 'target') {
+              menuItems.push({ key: 'status-following', label: '转为在跟进', icon: <ArrowRight size={14} />, onSelect: () => updateStatus.mutate({ id: company.id, status: 'following' }) })
+            } else if (status === 'following') {
+              menuItems.push({ key: 'status-won', label: '标记成交', icon: <Check size={14} />, onSelect: () => updateStatus.mutate({ id: company.id, status: 'won' }) })
+              menuItems.push({ key: 'status-lost', label: '标记流失', icon: <XCircle size={14} />, danger: true, onSelect: () => updateStatus.mutate({ id: company.id, status: 'lost' }) })
+            } else {
+              menuItems.push({ key: 'status-reactivate', label: '重新激活', icon: <RefreshCw size={14} />, onSelect: () => updateStatus.mutate({ id: company.id, status: 'following' }) })
+            }
+            if (canAssign) {
+              menuItems.push({ key: 'release', label: '释放到公海池', icon: <UserX size={14} />, danger: true, onSelect: () => handleRelease(company.id) })
+            }
+            menuItems.push({ key: 'merge', label: '合并重复客户', icon: <GitMerge size={14} />, onSelect: () => setMergeOpen((v) => !v) })
+          }
+          const openEdit = () => { setEditingItem(detailData); setOpenForm(true) }
+          return (
+            <DetailLayout
+              title={company.name}
+              badges={
+                <>
+                  <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${statusBadgeClasses[status]}`}>
+                    {statusLabels[status]}
+                  </span>
+                  {company.source === 'ai_recommendation' && (
+                    <span className="inline-flex items-center gap-0.5 rounded-md border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[11px] font-medium text-violet-600" title="小销 AI 建档，待核实">
+                      <Bot size={10} /> 小销
                     </span>
                   )}
                   {detailData._readonly && (
-                    <span className="rounded-full bg-text-tertiary/10 px-2 py-0.5 text-[11px] text-text-tertiary">
-                      由 {detailData.company.owner?.name || '其他同事'} 负责
-                    </span>
+                    <span className="rounded-full bg-text-tertiary/10 px-2 py-0.5 text-[11px] text-text-tertiary">只读</span>
                   )}
-                </div>
-              </div>
-              {!detailData.company.ownerId && (
-                <button
-                  onClick={() => handleClaim(detailData.company.id)}
-                  disabled={claim.isPending}
-                  className="flex items-center gap-1 rounded-lg bg-success px-2.5 py-1 text-xs font-medium text-white hover:bg-success/90 transition-colors disabled:opacity-50"
-                  title="认领客户"
-                >
-                  <Hand size={12} /> {claim.isPending ? '认领中...' : '认领'}
-                </button>
-              )}
-              {detailData.company.ownerId && !detailData._readonly && (
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => setLeadFormOpen(true)}
-                    className="flex items-center gap-1 rounded-lg bg-primary px-2.5 py-1 text-xs font-medium text-white hover:bg-primary/90 transition-colors"
-                    title="新建线索（商机由线索转化而来）"
-                  >
-                    <Plus size={12} /> 新建线索
-                  </button>
-                  {canAssign && (
-                    <button
-                      onClick={() => handleRelease(detailData.company.id)}
-                      disabled={assign.isPending}
-                      className="flex items-center gap-1 rounded-lg bg-warning px-2.5 py-1 text-xs font-medium text-white hover:bg-warning/90 transition-colors disabled:opacity-50"
-                      title="释放回公海池"
-                    >
-                      <UserX size={12} /> 释放
-                    </button>
+                </>
+              }
+              meta={
+                <>
+                  {company.industry && <span>{industryLabels[company.industry] || company.industry}</span>}
+                  {company.scale && <span>· {company.scale}</span>}
+                  {company.region && (
+                    <span className="flex items-center gap-0.5"><MapPin size={11} /> {company.region}</span>
                   )}
+                  <span>{company.owner ? `负责人 ${company.owner.name}` : '公海池'}</span>
+                  {!detailData._readonly && detailData.stats.daysSinceLastContact != null && (
+                    <span>最近联系 {detailData.stats.daysSinceLastContact} 天前</span>
+                  )}
+                </>
+              }
+              primary={
+                !company.ownerId ? (
                   <button
-                    onClick={() => setMergeOpen((v) => !v)}
-                    className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium transition-colors ${
-                      mergeOpen ? 'bg-warning text-white' : 'bg-surface-elevated text-text-secondary hover:bg-warning/10 hover:text-warning'
-                    }`}
-                    title="合并重复客户"
+                    onClick={() => handleClaim(company.id)}
+                    disabled={claim.isPending}
+                    className="flex h-9 items-center gap-1.5 rounded-lg bg-success px-3.5 text-sm font-medium text-white transition-colors hover:bg-success/90 disabled:opacity-50"
+                    title="认领客户"
                   >
-                    <GitMerge size={12} /> 合并重复
+                    <Hand size={14} /> {claim.isPending ? '认领中...' : '认领'}
                   </button>
+                ) : !detailData._readonly ? (
                   <button
-                    onClick={() => { setEditingItem(detailData); setOpenForm(true) }}
-                    className="rounded-lg p-1.5 text-text-tertiary hover:bg-primary/10 hover:text-primary transition-colors"
+                    onClick={openEdit}
+                    className="flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3.5 text-sm font-medium text-white transition-colors hover:bg-primary/90"
                     title="编辑客户"
                   >
-                    <Pencil size={14} />
+                    <Pencil size={14} /> 编辑
                   </button>
-                </div>
-              )}
-            </div>
+                ) : undefined
+              }
+              secondary={
+                company.ownerId && !detailData._readonly ? (
+                  <button
+                    onClick={() => setLeadFormOpen(true)}
+                    className="flex h-9 items-center gap-1.5 rounded-lg border border-border bg-surface px-3.5 text-sm font-medium text-text-secondary transition-colors hover:border-primary/40 hover:text-primary"
+                    title="新建线索（商机由线索转化而来）"
+                  >
+                    <Plus size={14} /> 新建线索
+                  </button>
+                ) : undefined
+              }
+              menu={menuItems}
+              footer={
+                !detailData._readonly ? (
+                  <>
+                    {company.ownerId ? (
+                      <>
+                        <button
+                          onClick={() => setLeadFormOpen(true)}
+                          className="flex h-9 items-center gap-1.5 rounded-lg border border-border bg-surface px-3.5 text-sm font-medium text-text-secondary transition-colors hover:border-primary/40 hover:text-primary"
+                          title="新建线索（商机由线索转化而来）"
+                        >
+                          <Plus size={14} /> 新建线索
+                        </button>
+                        <button
+                          onClick={openEdit}
+                          className="flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3.5 text-sm font-medium text-white transition-colors hover:bg-primary/90"
+                          title="编辑客户"
+                        >
+                          <Pencil size={14} /> 编辑
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        onClick={() => handleClaim(company.id)}
+                        disabled={claim.isPending}
+                        className="flex h-9 items-center gap-1.5 rounded-lg bg-success px-3.5 text-sm font-medium text-white transition-colors hover:bg-success/90 disabled:opacity-50"
+                        title="认领客户"
+                      >
+                        <Hand size={14} /> {claim.isPending ? '认领中...' : '认领'}
+                      </button>
+                    )}
+                  </>
+                ) : undefined
+              }
+            >
 
             {/* 合并重复客户面板 */}
             {mergeOpen && !detailData._readonly && (
@@ -707,41 +752,29 @@ export default function Customers() {
               </div>
             )}
 
-            {/* 360 Status Summary */}
+            {/* KPI 串（4 卡一行）：商机 / 联系人 / 拜访 / 完整度 */}
             {!detailData._readonly && (
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                <div className="rounded-xl border border-border bg-background p-3">
-                  <p className="text-xs text-text-tertiary">活跃商机</p>
-                  <p className="mt-1 text-lg font-semibold text-text-primary">
-                    {detailData.stats.activeProjectCount}
-                    <span className="ml-1 text-xs font-normal text-text-tertiary">/ {detailData.stats.projectCount}</span>
-                  </p>
-                </div>
-                <div className="rounded-xl border border-border bg-background p-3">
-                  <p className="text-xs text-text-tertiary">联系人</p>
-                  <p className="mt-1 text-lg font-semibold text-text-primary">
-                    {detailData.stats.contactCount}
-                    <span className="ml-1 text-xs font-normal text-text-tertiary">· 决策人 {detailData.stats.decisionMakerCount}</span>
-                  </p>
-                </div>
-                <div className="rounded-xl border border-border bg-background p-3">
-                  <p className="text-xs text-text-tertiary">平均健康度</p>
-                  <p className={`mt-1 text-lg font-semibold ${
-                    (detailData.stats.avgHealthScore ?? 60) >= 60 ? 'text-success' :
-                    (detailData.stats.avgHealthScore ?? 60) >= 40 ? 'text-warning' : 'text-danger'
-                  }`}>
-                    {detailData.stats.avgHealthScore ?? '-'}
-                  </p>
-                </div>
-                <div className="rounded-xl border border-border bg-background p-3">
-                  <p className="text-xs text-text-tertiary">最近联系</p>
-                  <p className="mt-1 text-sm font-medium text-text-primary">
-                    {detailData.stats.daysSinceLastContact != null
-                      ? `${detailData.stats.daysSinceLastContact} 天前`
-                      : '从未'}
-                  </p>
-                </div>
-              </div>
+              <DetailKpiRow
+                items={[
+                  {
+                    label: `活跃商机 / ${detailData.stats.projectCount}`,
+                    value: detailData.stats.activeProjectCount,
+                  },
+                  {
+                    label: `联系人 · 决策人 ${detailData.stats.decisionMakerCount}`,
+                    value: detailData.stats.contactCount,
+                  },
+                  {
+                    label: '拜访记录',
+                    value: detailData.stats.visitCount,
+                  },
+                  {
+                    label: '档案完整度',
+                    value: `${completenessScore}%`,
+                    tone: completenessScore >= 85 ? 'success' : completenessScore >= 60 ? 'warning' : 'danger',
+                  },
+                ]}
+              />
             )}
 
             {/* Risk Warnings */}
@@ -771,147 +804,89 @@ export default function Customers() {
               </div>
             )}
 
-            {/* Status & Completeness */}
-            {!detailData._readonly && (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between rounded-xl border border-border bg-background p-4">
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm text-text-secondary">当前状态</span>
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusBadgeClasses[detailData.company.status || 'target']}`}>
-                      {statusLabels[detailData.company.status || 'target']}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {detailData.company.status === 'target' && (
-                      <button
-                        onClick={() => updateStatus.mutate({ id: detailData.company.id, status: 'following' })}
-                        disabled={updateStatus.isPending}
-                        className="rounded-lg bg-primary px-2.5 py-1 text-xs font-medium text-white hover:bg-primary/90 disabled:opacity-50"
-                      >
-                        转为在跟进
-                      </button>
-                    )}
-                    {detailData.company.status === 'following' && (
-                      <>
-                        <button
-                          onClick={() => updateStatus.mutate({ id: detailData.company.id, status: 'won' })}
-                          disabled={updateStatus.isPending}
-                          className="rounded-lg bg-success px-2.5 py-1 text-xs font-medium text-white hover:bg-success/90 disabled:opacity-50"
-                        >
-                          标记成交
-                        </button>
-                        <button
-                          onClick={() => updateStatus.mutate({ id: detailData.company.id, status: 'lost' })}
-                          disabled={updateStatus.isPending}
-                          className="rounded-lg bg-text-tertiary/20 px-2.5 py-1 text-xs font-medium text-text-secondary hover:bg-text-tertiary/30 disabled:opacity-50"
-                        >
-                          标记流失
-                        </button>
-                      </>
-                    )}
-                    {(detailData.company.status === 'won' || detailData.company.status === 'lost') && (
-                      <button
-                        onClick={() => updateStatus.mutate({ id: detailData.company.id, status: 'following' })}
-                        disabled={updateStatus.isPending}
-                        className="rounded-lg bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/20 disabled:opacity-50"
-                      >
-                        重新激活
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {detailData.completeness && (
-                  <div className="rounded-xl border border-border bg-background p-4">
-                    <div className="mb-2 flex items-center justify-between">
-                      <span className="text-sm font-medium text-text-secondary">客户完整度</span>
-                      <span className={`text-sm font-semibold ${
-                        detailData.completeness.score >= 85 ? 'text-success' :
-                        detailData.completeness.score >= 60 ? 'text-warning' : 'text-danger'
-                      }`}>
-                        {detailData.completeness.score} 分
-                      </span>
-                    </div>
-                    <div className="h-2 overflow-hidden rounded-full bg-border">
-                      <div
-                        className={`h-full rounded-full transition-all ${
-                          detailData.completeness.score >= 85 ? 'bg-success' :
-                          detailData.completeness.score >= 60 ? 'bg-warning' : 'bg-danger'
-                        }`}
-                        style={{ width: `${detailData.completeness.score}%` }}
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {missingFields && missingFields.length > 0 && (
-                  <div className="rounded-xl border border-warning/20 bg-warning/5 p-4">
-                    <div className="mb-2 flex items-center gap-2 text-sm font-medium text-warning">
-                      <AlertTriangle size={14} />
-                      <span>缺失字段提醒</span>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {missingFields.map((field) => (
-                        <span
-                          key={field.field}
-                          className={`rounded-full px-2 py-0.5 text-xs ${
-                            field.severity === 'high' ? 'bg-danger/10 text-danger' : 'bg-warning/10 text-warning'
-                          }`}
-                        >
-                          {field.label}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
+            {/* 缺失字段（可点击 tag 打开编辑补充；完整度分值见 KPI 串；状态切换收进 ⋯ 菜单） */}
+            {!detailData._readonly && missingFields && missingFields.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2 rounded-xl border border-warning/20 bg-warning/5 px-3.5 py-2.5">
+                <span className="flex items-center gap-1 text-xs font-medium text-warning">
+                  <AlertTriangle size={13} /> 缺失字段 · 点击补充
+                </span>
+                {missingFields.map((field) => (
+                  <button
+                    key={field.field}
+                    onClick={openEdit}
+                    title="点击打开编辑表单补充该字段"
+                    className={`rounded-full px-2 py-0.5 text-[11px] font-medium transition-opacity hover:opacity-70 ${
+                      field.severity === 'high' ? 'bg-danger/10 text-danger' : 'bg-warning/10 text-warning'
+                    }`}
+                  >
+                    {field.label} +
+                  </button>
+                ))}
               </div>
             )}
 
-            {/* Contact Info */}
-            <div className="rounded-xl border border-border bg-background p-4">
-              <h4 className="mb-3 text-sm font-medium text-text-secondary">联系信息</h4>
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                {detailData.company.contactPerson && (
-                  <div>
-                    <span className="text-xs text-text-tertiary">联系人</span>
-                    <p className="text-text-primary">{detailData.company.contactPerson}</p>
-                  </div>
-                )}
-                {detailData.company.contactPhone && (
-                  <div>
-                    <span className="text-xs text-text-tertiary">电话</span>
-                    <p className="text-text-primary">{detailData.company.contactPhone}</p>
-                  </div>
-                )}
-                {detailData.company.address && (
-                  <div className="col-span-2">
-                    <span className="text-xs text-text-tertiary">地址</span>
-                    <p className="text-text-primary">{detailData.company.address}</p>
-                  </div>
-                )}
-                {detailData.company.website && (
-                  <div className="col-span-2">
-                    <span className="text-xs text-text-tertiary">官网</span>
-                    <a href={detailData.company.website} target="_blank" rel="noreferrer" className="text-primary hover:underline">
-                      {detailData.company.website}
-                    </a>
-                  </div>
-                )}
-              </div>
-            </div>
+            {/* 基本档案（短字段两列栅格，长字段独占） */}
+            <DetailSection title="基本档案">
+              <DetailFieldGrid>
+                <DetailField
+                  label="行业"
+                  value={company.industry ? industryLabels[company.industry] || company.industry : undefined}
+                />
+                <DetailField
+                  label="等级"
+                  value={company.level ? LEVEL_OPTIONS.find((l) => l.value === company.level)?.label || company.level : undefined}
+                />
+                <DetailField label="规模" value={company.scale} />
+                <DetailField label="地区" value={company.region} />
+                <DetailField label="来源" value={company.source ? sourceLabel(company.source) : undefined} />
+                <DetailField label="联系人" value={company.contactPerson} />
+                <DetailField label="电话" value={company.contactPhone} />
+                <DetailField
+                  label="官网"
+                  span
+                  value={
+                    company.website ? (
+                      <a href={company.website} target="_blank" rel="noreferrer" className="text-primary hover:underline">
+                        {company.website}
+                      </a>
+                    ) : undefined
+                  }
+                />
+                <DetailField label="地址" value={company.address} span />
+              </DetailFieldGrid>
+            </DetailSection>
 
             {!detailData._readonly && (
               <>
-                {/* Related Projects */}
-                <div className="rounded-xl border border-border bg-background p-4">
-              <div className="mb-3 flex items-center justify-between">
-                <h4 className="flex items-center gap-1.5 text-sm font-medium text-text-secondary">
-                  <FolderOpen size={14} /> 关联商机 ({detailData.projects.length})
-                </h4>
-              </div>
-              {detailData.projects.length === 0 && (
-                <p className="text-xs text-text-tertiary">暂无关联商机</p>
-              )}
+                {/* 决策链角色矩阵（替代旧「联系信息」+「关联联系人」两张重复卡） */}
+                <DetailSection
+                  title={`决策链 · ${detailData.contacts.length} 人`}
+                  icon={<Users size={14} />}
+                  action={
+                    <button
+                      onClick={() => navigate('/contacts')}
+                      className="text-xs text-primary hover:underline"
+                      title="联系人管理"
+                    >
+                      全部联系人 →
+                    </button>
+                  }
+                >
+                  <DecisionChainMatrix
+                    contacts={detailData.contacts}
+                    onOpenContact={(id) => navigate(entityRouteTo('contact', id))}
+                  />
+                </DetailSection>
+
+                {/* 关联商机（空模块折叠为占位条） */}
+                <DetailCollapsible
+                  title="关联商机"
+                  icon={<FolderOpen size={14} />}
+                  count={detailData.projects.length}
+                  isEmpty={detailData.projects.length === 0}
+                  emptyText="暂无关联商机"
+                  emptyHint="该客户的线索转化后，商机将出现在这里"
+                >
               <div className="space-y-2">
                 {detailData.projects.map((p) => (
                   <div
@@ -948,71 +923,17 @@ export default function Customers() {
                   </div>
                 ))}
               </div>
-            </div>
+            </DetailCollapsible>
 
-            {/* Related Contacts */}
-            <div className="rounded-xl border border-border bg-background p-4">
-              <div className="mb-3 flex items-center justify-between">
-                <h4 className="flex items-center gap-1.5 text-sm font-medium text-text-secondary">
-                  <Users size={14} /> 关联联系人 ({detailData.contacts.length})
-                  <button
-                    onClick={() => navigate('/contacts')}
-                    className="ml-auto text-xs font-normal text-primary hover:underline"
-                    title="联系人管理"
-                  >
-                    全部联系人 →
-                  </button>
-                </h4>
-              </div>
-              {detailData.contacts.length === 0 && (
-                <p className="text-xs text-text-tertiary">暂无关联联系人</p>
-              )}
-              <div className="space-y-2">
-                {detailData.contacts.map((c) => (
-                  <div
-                    key={c.id}
-                    className="flex items-center gap-3 rounded-lg bg-surface px-3 py-2 cursor-pointer hover:bg-surface-elevated/50 transition-colors"
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => e.key === 'Enter' && navigate(entityRouteTo('contact', c.id))}
-                    onClick={() => navigate(entityRouteTo('contact', c.id))}
-                  >
-                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary">
-                      <User size={14} />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-text-primary">{c.name}</span>
-                        {c.decisionRole && (
-                          <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[11px] text-primary">{decisionRoleLabels[c.decisionRole] || c.decisionRole}</span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 text-xs text-text-tertiary">
-                        {c.position && <span>{c.position}</span>}
-                        {c.department && <span>· {c.department}</span>}
-                        {c.phone && <span>· {c.phone}</span>}
-                      </div>
-                    </div>
-                    {c.phone && (
-                      <a href={`tel:${c.phone}`} onClick={(e) => e.stopPropagation()} className="shrink-0 rounded-lg p-1.5 text-text-tertiary hover:bg-primary/10 hover:text-primary transition-colors">
-                        <Phone size={12} />
-                      </a>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Recent Visits */}
-            <div className="rounded-xl border border-border bg-background p-4">
-              <div className="mb-3 flex items-center justify-between">
-                <h4 className="flex items-center gap-1.5 text-sm font-medium text-text-secondary">
-                  <Calendar size={14} /> 近期拜访 ({detailData.visits?.length || 0})
-                </h4>
-              </div>
-              {(!detailData.visits || detailData.visits.length === 0) && (
-                <p className="text-xs text-text-tertiary">暂无拜访记录</p>
-              )}
+            {/* 近期拜访（空模块折叠为占位条） */}
+            <DetailCollapsible
+              title="近期拜访"
+              icon={<Calendar size={14} />}
+              count={detailData.visits?.length || 0}
+              isEmpty={!detailData.visits || detailData.visits.length === 0}
+              emptyText="暂无拜访记录"
+              emptyHint="记录拜访后可在此回溯沟通历史"
+            >
               <div className="space-y-2">
                 {detailData.visits?.map((v) => (
                   <div
@@ -1043,18 +964,17 @@ export default function Customers() {
                   </div>
                 ))}
               </div>
-            </div>
+            </DetailCollapsible>
 
-            {/* Pending Tasks */}
-            <div className="rounded-xl border border-border bg-background p-4">
-              <div className="mb-3 flex items-center justify-between">
-                <h4 className="flex items-center gap-1.5 text-sm font-medium text-text-secondary">
-                  <Flag size={14} /> 待办任务 ({detailData.tasks?.length || 0})
-                </h4>
-              </div>
-              {(!detailData.tasks || detailData.tasks.length === 0) && (
-                <p className="text-xs text-text-tertiary">暂无待办任务</p>
-              )}
+            {/* 待办任务（空模块折叠为占位条） */}
+            <DetailCollapsible
+              title="待办任务"
+              icon={<Flag size={14} />}
+              count={detailData.tasks?.length || 0}
+              isEmpty={!detailData.tasks || detailData.tasks.length === 0}
+              emptyText="暂无待办任务"
+              emptyHint="在任务页为该客户创建待办后显示在这里"
+            >
               <div className="space-y-2">
                 {detailData.tasks?.map((t) => (
                   <div key={t.id} className="flex items-center gap-3 rounded-lg bg-surface px-3 py-2">
@@ -1076,17 +996,22 @@ export default function Customers() {
                   </div>
                 ))}
               </div>
-            </div>
+            </DetailCollapsible>
 
             {/* Activity Feed */}
             {!detailData._readonly && (
               <>
-                {/* Change History */}
-                {changeHistory && changeHistory.length > 0 && (
-                  <div className="rounded-xl border border-border bg-background p-4">
-                    <h4 className="mb-3 text-sm font-medium text-text-secondary">变更历史</h4>
-                    <div className="space-y-2">
-                      {changeHistory.slice(0, 10).map((h) => (
+                {/* 变更历史（空模块折叠为占位条） */}
+                <DetailCollapsible
+                  title="变更历史"
+                  icon={<History size={14} />}
+                  count={changeHistory?.length || 0}
+                  isEmpty={!changeHistory || changeHistory.length === 0}
+                  emptyText="暂无变更"
+                  emptyHint="字段变更（手动 / AI）将在此留痕"
+                >
+                  <div className="space-y-2">
+                      {changeHistory?.slice(0, 10).map((h) => (
                         <div key={h.id} className="flex items-start gap-2 text-xs">
                           <div className="mt-1 h-1.5 w-1.5 rounded-full bg-primary" />
                           <div className="flex-1">
@@ -1101,25 +1026,24 @@ export default function Customers() {
                           </div>
                         </div>
                       ))}
-                    </div>
                   </div>
-                )}
+                </DetailCollapsible>
 
                 <TimelineView entityType="customer" entityId={detailData.company.id} title="客户时间轴" showProject />
               </>
             )}
 
-            {/* Notes */}
-            {detailData.company.notes && (
-              <div className="rounded-xl border border-border bg-background p-4">
-                <h4 className="mb-2 text-sm font-medium text-text-secondary">备注</h4>
-                <p className="whitespace-pre-wrap text-sm text-text-primary">{detailData.company.notes}</p>
-              </div>
+            {/* 备注 */}
+            {company.notes && (
+              <DetailSection title="备注">
+                <p className="whitespace-pre-wrap text-sm text-text-primary">{company.notes}</p>
+              </DetailSection>
             )}
           </>
-        )}
-          </div>
-        )}
+            )}
+            </DetailLayout>
+          )
+        })()}
       </Drawer>
 
       <VisitDetailDrawer visitId={visitDetailId} onClose={() => setVisitDetailId(undefined)} />

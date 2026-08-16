@@ -45,6 +45,7 @@ import AiEntryButton from '../components/ai/ai-entry-button.js'
 import { EmptyState, LoadingState, ErrorState } from '../components/ui/states.js'
 import { useConfirmDialog } from '../hooks/use-confirm-dialog.js'
 import { ViewTabs, Pagination } from '../components/ui/tabs.js'
+import { DetailLayout, DetailSection, DetailCollapsible, DetailKpiRow, DetailField, DetailFieldGrid } from '../components/detail/detail-layout.js'
 
 const statusLabels: Record<string, string> = {
   NEW: '新建',
@@ -570,30 +571,20 @@ export default function Leads() {
       </div>
       <LeadForm open={open} onClose={handleClose} initialData={editingItem} />
 
-      <Drawer open={!!detailId} onClose={() => setDetailId(undefined)} title="线索详情">
+      {/* 线索详情（D2 标准详情 40rem：主行动「转化为商机」上移头区 + 粘底行动条） */}
+      <Drawer open={!!detailId} onClose={() => setDetailId(undefined)} title="线索详情" size="md">
         {detailId && !detailItem && <LoadingState />}
         {detailItem && (
-          <div className="space-y-5">
-            <div className="flex items-start justify-between">
-              <div>
-                <label className="text-xs text-text-tertiary">线索名称</label>
-                <p className="text-base font-medium text-text-primary">{detailItem.name}</p>
-                {detailItem.company?.name && detailItem.company?.id && (
-                  <button
-                    onClick={() => navigate(`/customers?id=${detailItem.company!.id}`)}
-                    className="mt-0.5 flex items-center gap-1 text-xs text-primary hover:underline"
-                  >
-                    <Building2 size={11} /> {detailItem.company.name}（所属客户）
-                  </button>
-                )}
-              </div>
-              <div className="flex gap-2">
+          <DetailLayout
+            title={detailItem.name}
+            badges={
+              <>
                 {detailItem.grade && (
-                  <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${gradeBadge(detailItem.grade)}`}>
-                    {detailItem.grade}级
+                  <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${gradeBadge(detailItem.grade)}`}>
+                    {detailItem.grade} 级
                   </span>
                 )}
-                <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
                   detailItem.status === 'FOLLOWING' ? 'bg-success/10 text-success' :
                   detailItem.status === 'CONVERTED' ? 'bg-primary/10 text-primary' :
                   detailItem.status === 'LOST' ? 'bg-danger/10 text-danger' :
@@ -601,102 +592,202 @@ export default function Leads() {
                 }`}>
                   {statusLabels[detailItem.status] || detailItem.status}
                 </span>
-              </div>
-            </div>
+              </>
+            }
+            meta={
+              <>
+                <span>来源 {sourceLabels[detailItem.source] || detailItem.source}</span>
+                {detailItem.company?.name && detailItem.company?.id ? (
+                  <button
+                    onClick={() => navigate(`/customers?id=${detailItem.company!.id}`)}
+                    className="flex items-center gap-0.5 text-primary hover:underline"
+                  >
+                    <Building2 size={11} /> {detailItem.company.name}（所属客户）
+                  </button>
+                ) : (
+                  <span className="flex items-center gap-0.5 text-text-tertiary"><Building2 size={11} /> 无关联客户</span>
+                )}
+              </>
+            }
+            primary={
+              detailItem.status === 'FOLLOWING' ? (
+                <button
+                  onClick={() => handleConvert(detailItem)}
+                  disabled={convert.isPending}
+                  className="flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3.5 text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
+                  title="满足转化门禁后转化为商机"
+                >
+                  {convert.isPending ? <Loader2 size={14} className="animate-spin" /> : <ArrowRightLeft size={14} />}
+                  {convert.isPending ? '转化中...' : '转化为商机'}
+                </button>
+              ) : undefined
+            }
+            secondary={
+              <button
+                onClick={() => handleEdit(detailItem)}
+                className="flex h-9 items-center gap-1.5 rounded-lg border border-border bg-surface px-3.5 text-sm font-medium text-text-secondary transition-colors hover:border-primary/40 hover:text-primary"
+                title="编辑线索"
+              >
+                <Pencil size={14} /> 编辑
+              </button>
+            }
+            footer={
+              detailItem.status === 'FOLLOWING' ? (
+                <>
+                  <button
+                    onClick={() => setFollowUpOpen(true)}
+                    className="flex h-9 items-center gap-1.5 rounded-lg border border-border bg-surface px-3.5 text-sm font-medium text-text-secondary transition-colors hover:border-primary/40 hover:text-primary"
+                  >
+                    <MessageSquare size={14} /> 记录跟进
+                  </button>
+                  <button
+                    onClick={() => handleConvert(detailItem)}
+                    disabled={convert.isPending}
+                    className="flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3.5 text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
+                  >
+                    {convert.isPending ? <Loader2 size={14} className="animate-spin" /> : <ArrowRightLeft size={14} />}
+                    {convert.isPending ? '转化中...' : '转化为商机'}
+                  </button>
+                </>
+              ) : undefined
+            }
+          >
+            {/* KPI 串（评分 / 完整度 / 跟进次数 / 最近跟进） */}
+            <DetailKpiRow
+              items={[
+                {
+                  label: `评分 · ${detailItem.assessedBy === 'AI' ? 'AI 评估' : detailItem.score != null ? '规则评分' : '未评估'}`,
+                  value: detailItem.score ?? '—',
+                  tone: (detailItem.score ?? 0) >= 80 ? 'success' : (detailItem.score ?? 0) >= 60 ? 'warning' : undefined,
+                },
+                { label: '档案完整度', value: `${detailItem.completenessScore}%` },
+                { label: '跟进次数', value: detailItem.followUpCount },
+                {
+                  label: '最近跟进',
+                  value: detailItem.lastFollowUpAt ? new Date(detailItem.lastFollowUpAt).toLocaleDateString('zh-CN') : '未跟进',
+                },
+              ]}
+            />
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="text-xs text-text-tertiary">来源</label>
-                <p className="text-sm text-text-primary">{sourceLabels[detailItem.source] || detailItem.source}</p>
-              </div>
-              <div>
-                <label className="text-xs text-text-tertiary">完整度评分</label>
-                <p className="text-sm text-text-primary">{detailItem.completenessScore}</p>
-              </div>
-            </div>
-
-            {(detailItem.score !== undefined || detailItem.grade) && (
-              <div className="rounded-xl border border-border bg-surface p-4">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium text-text-primary">综合评分</p>
-                  <span className="text-xs text-text-tertiary">
-                    {detailItem.assessedBy === 'AI' ? 'AI 评估' : '规则评分'} · {detailItem.assessedAt ? new Date(detailItem.assessedAt).toLocaleString('zh-CN') : '-'}
-                  </span>
-                </div>
-                <div className="mt-2 flex items-baseline gap-2">
-                  {detailItem.score != null && detailItem.score > 0 ? (
-                    <>
-                      <span className="text-2xl font-bold text-text-primary">{detailItem.score}</span>
-                      <span className="text-sm text-text-secondary">分</span>
-                    </>
-                  ) : (
-                    <span className="text-lg font-medium text-text-tertiary">未评分</span>
+            {detailItem.status === 'FOLLOWING' && (
+              <>
+                {/* 转化条件（紧凑 checklist：达标绿勾 / 未达标橙点） */}
+                <DetailSection
+                  title={`转化条件 · ${checkReadiness(detailItem).filter((c) => c.pass).length}/${checkReadiness(detailItem).length} 达标`}
+                >
+                  <div className="space-y-1.5">
+                    {checkReadiness(detailItem).map((check, idx) => (
+                      <div key={idx} className="flex items-center gap-2 text-[13px]">
+                        {check.pass ? (
+                          <CheckCircle2 size={14} className="shrink-0 text-success" />
+                        ) : (
+                          <span className="ml-[5px] mr-[5px] h-1.5 w-1.5 shrink-0 rounded-full bg-warning" />
+                        )}
+                        <span className={check.pass ? 'text-text-secondary' : 'text-warning'}>{check.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {!showForce && isAdmin && (
+                    <button
+                      onClick={() => setShowForce(true)}
+                      className="mt-2 text-xs text-text-tertiary transition-colors hover:text-text-secondary"
+                    >
+                      管理员强制转化
+                    </button>
                   )}
-                  {detailItem.grade && (
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${gradeBadge(detailItem.grade)}`}>
-                      {detailItem.grade}级
+                </DetailSection>
+
+                {/* 次行动紧凑条（h-8，与主行动视觉分层） */}
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => handleScore(detailItem.id)}
+                    disabled={score.isPending}
+                    className="flex h-8 items-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-xs font-medium text-text-secondary transition-colors hover:border-primary/40 hover:text-primary disabled:opacity-50"
+                  >
+                    <Star size={13} /> 规则评分
+                  </button>
+                  <button
+                    onClick={() => handleAssess(detailItem.id)}
+                    disabled={assess.isPending}
+                    className="flex h-8 items-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-xs font-medium text-text-secondary transition-colors hover:border-primary/40 hover:text-primary disabled:opacity-50"
+                  >
+                    <BrainCircuit size={13} /> AI 评估
+                  </button>
+                  <button
+                    onClick={() => setFollowUpOpen(true)}
+                    className="flex h-8 items-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-xs font-medium text-text-secondary transition-colors hover:border-primary/40 hover:text-primary"
+                  >
+                    <MessageSquare size={13} /> 记录跟进
+                  </button>
+                  <button
+                    onClick={() => setLoseOpen(true)}
+                    className="flex h-8 items-center gap-1.5 rounded-lg border border-danger/30 bg-surface px-3 text-xs font-medium text-danger transition-colors hover:bg-danger/10"
+                    title="标记流失（必填原因）"
+                  >
+                    <XCircle size={13} /> 标记流失
+                  </button>
+                </div>
+
+                {assessmentJobId && job.data && (
+                  <div className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-xs">
+                    <RefreshCw size={13} className={job.data.status === 'running' || job.data.status === 'pending' ? 'animate-spin text-primary' : 'text-text-secondary'} />
+                    <span className="text-text-secondary">
+                      AI 评估：{job.data.status === 'pending' ? '排队中' : job.data.status === 'running' ? '评估中' : job.data.status === 'completed' ? `完成 ${job.data.score ?? ''}分 ${job.data.grade ?? ''}级` : `失败 ${job.data.error ?? ''}`}
                     </span>
-                  )}
-                </div>
-              </div>
+                  </div>
+                )}
+
+                {showForce && (
+                  <div className="space-y-2 rounded-xl border border-danger/20 bg-danger/5 p-3">
+                    <textarea
+                      value={forceReason}
+                      onChange={(e) => setForceReason(e.target.value)}
+                      placeholder="强制转化原因（必填）"
+                      className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary outline-none focus:border-danger"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => { setShowForce(false); setForceReason('') }}
+                        className="flex-1 rounded-lg border border-border bg-surface px-3 py-2 text-xs font-medium text-text-secondary hover:bg-surface-elevated"
+                      >
+                        取消
+                      </button>
+                      <button
+                        onClick={() => handleConvert(detailItem, true)}
+                        disabled={convert.isPending || !forceReason.trim()}
+                        className="flex-1 rounded-lg bg-danger px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-danger/90 disabled:opacity-50"
+                      >
+                        {convert.isPending ? '转化中...' : '确认强制转化'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="text-xs text-text-tertiary">联系人</label>
-                <p className="text-sm text-text-primary">{detailItem.contactName || '-'}</p>
-              </div>
-              <div>
-                <label className="text-xs text-text-tertiary">职位</label>
-                <p className="text-sm text-text-primary">{detailItem.contactPosition || '-'}</p>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="text-xs text-text-tertiary">电话</label>
-                <p className="text-sm text-text-primary">{detailItem.contactPhone || '-'}</p>
-              </div>
-              <div>
-                <label className="text-xs text-text-tertiary">邮箱</label>
-                <p className="text-sm text-text-primary">{detailItem.contactEmail || '-'}</p>
-              </div>
-            </div>
+            {/* 联系人（两列栅格） */}
+            <DetailSection title="联系人">
+              <DetailFieldGrid>
+                <DetailField label="姓名" value={detailItem.contactName} />
+                <DetailField label="职位" value={detailItem.contactPosition} />
+                <DetailField label="电话" value={detailItem.contactPhone} />
+                <DetailField label="邮箱" value={detailItem.contactEmail} />
+              </DetailFieldGrid>
+            </DetailSection>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="text-xs text-text-tertiary">决策人</label>
-                <p className="text-sm text-text-primary">{detailItem.humanInfo?.decisionMaker || '-'}</p>
-              </div>
-              <div>
-                <label className="text-xs text-text-tertiary">需求</label>
-                <p className="text-sm text-text-primary">{detailItem.businessInfo?.requirements || '-'}</p>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="text-xs text-text-tertiary">预算</label>
-                <p className="text-sm text-text-primary">{detailItem.financeInfo?.budget || detailItem.financeInfo?.budgetSource || '-'}</p>
-              </div>
-              <div>
-                <label className="text-xs text-text-tertiary">采购时间</label>
-                <p className="text-sm text-text-primary">{detailItem.businessInfo?.timeline || '-'}</p>
-              </div>
-            </div>
-
-            {detailItem.followUpCount > 0 && (
-              <div>
-                <label className="text-xs text-text-tertiary">跟进统计</label>
-                <p className="text-sm text-text-primary">
-                  {detailItem.followUpCount} 次跟进
-                  {detailItem.lastFollowUpAt && ` · 最近 ${new Date(detailItem.lastFollowUpAt).toLocaleString('zh-CN')}`}
-                </p>
-              </div>
-            )}
-
-            <div>
-              <label className="text-xs text-text-tertiary">备注</label>
-              <p className="text-sm text-text-primary whitespace-pre-wrap">{detailItem.notes || '-'}</p>
-            </div>
+            {/* 人 · 事 · 财（两列分区） */}
+            <DetailSection title="人 · 事 · 财">
+              <DetailFieldGrid>
+                <DetailField label="人 · 关键决策人" value={detailItem.humanInfo?.decisionMaker} />
+                <DetailField label="财 · 预算" value={detailItem.financeInfo?.budget || detailItem.financeInfo?.budgetSource} />
+                <DetailField
+                  label="事 · 需求方向"
+                  value={detailItem.businessInfo?.requirements ? <span className="whitespace-pre-wrap">{detailItem.businessInfo.requirements}</span> : undefined}
+                  span
+                />
+                <DetailField label="事 · 采购时间" value={detailItem.businessInfo?.timeline} />
+              </DetailFieldGrid>
+            </DetailSection>
 
             {(detailItem.status === 'NEW' || detailItem.status === 'PAUSED' || detailItem.status === 'LOST') && (
               <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
@@ -713,111 +804,6 @@ export default function Leads() {
                   {updateLead.isPending ? '激活中...' : detailItem.status === 'LOST' ? '重新打开（恢复跟进）' : '开始跟进（激活）'}
                 </button>
               </div>
-            )}
-
-            {detailItem.status === 'FOLLOWING' && (
-              <>
-                <div className="rounded-xl border border-border bg-surface p-4 space-y-2">
-                  <p className="text-sm font-medium text-text-primary">转化条件检查</p>
-                  {checkReadiness(detailItem).map((check, idx) => (
-                    <div key={idx} className="flex items-center gap-2 text-sm">
-                      {check.pass ? (
-                        <CheckCircle2 size={14} className="text-success" />
-                      ) : (
-                        <AlertCircle size={14} className="text-warning" />
-                      )}
-                      <span className={check.pass ? 'text-text-secondary' : 'text-warning'}>{check.label}</span>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    onClick={() => handleScore(detailItem.id)}
-                    disabled={score.isPending}
-                    className="flex items-center gap-1.5 rounded-xl border border-border bg-surface px-3 py-2 text-sm font-medium text-text-secondary hover:bg-surface-elevated transition-colors disabled:opacity-50"
-                  >
-                    <Star size={14} /> 规则评分
-                  </button>
-                  <button
-                    onClick={() => handleAssess(detailItem.id)}
-                    disabled={assess.isPending}
-                    className="flex items-center gap-1.5 rounded-xl border border-border bg-surface px-3 py-2 text-sm font-medium text-text-secondary hover:bg-surface-elevated transition-colors disabled:opacity-50"
-                  >
-                    <BrainCircuit size={14} /> AI 评估
-                  </button>
-                  <button
-                    onClick={() => setFollowUpOpen(true)}
-                    className="flex items-center gap-1.5 rounded-xl border border-border bg-surface px-3 py-2 text-sm font-medium text-text-secondary hover:bg-surface-elevated transition-colors"
-                  >
-                    <MessageSquare size={14} /> 记录跟进
-                  </button>
-                  <button
-                    onClick={() => setLoseOpen(true)}
-                    className="flex items-center gap-1.5 rounded-xl border border-border bg-surface px-3 py-2 text-sm font-medium text-text-secondary hover:bg-surface-elevated transition-colors"
-                  >
-                    <XCircle size={14} /> 标记流失
-                  </button>
-                </div>
-
-                {assessmentJobId && job.data && (
-                  <div className="rounded-xl border border-border bg-surface p-3">
-                    <div className="flex items-center gap-2 text-sm">
-                      <RefreshCw size={14} className={job.data.status === 'running' || job.data.status === 'pending' ? 'animate-spin text-primary' : 'text-text-secondary'} />
-                      <span className="text-text-secondary">
-                        AI 评估：{job.data.status === 'pending' ? '排队中' : job.data.status === 'running' ? '评估中' : job.data.status === 'completed' ? `完成 ${job.data.score ?? ''}分 ${job.data.grade ?? ''}级` : `失败 ${job.data.error ?? ''}`}
-                      </span>
-                    </div>
-                  </div>
-                )}
-
-                {showForce ? (
-                  <div className="space-y-2">
-                    <textarea
-                      value={forceReason}
-                      onChange={(e) => setForceReason(e.target.value)}
-                      placeholder="强制转化原因（必填）"
-                      className="w-full rounded-xl border border-border bg-background px-4 py-2 text-sm text-text-primary outline-none focus:border-primary"
-                    />
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => { setShowForce(false); setForceReason('') }}
-                        className="flex-1 rounded-xl border border-border bg-surface px-4 py-2 text-sm text-text-secondary hover:bg-surface-elevated"
-                      >
-                        取消
-                      </button>
-                      <button
-                        onClick={() => handleConvert(detailItem, true)}
-                        disabled={convert.isPending || !forceReason.trim()}
-                        className="flex-1 rounded-xl bg-danger px-4 py-2 text-sm font-medium text-white hover:bg-danger/90 disabled:opacity-50"
-                      >
-                        {convert.isPending ? '转化中...' : '确认强制转化'}
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => handleConvert(detailItem)}
-                    disabled={convert.isPending}
-                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white hover:bg-primary/90 transition-colors disabled:opacity-50"
-                  >
-                    {convert.isPending ? (
-                      <Loader2 size={16} className="animate-spin" />
-                    ) : (
-                      <ArrowRightLeft size={16} />
-                    )}
-                    {convert.isPending ? '转化中...' : '转化为商机'}
-                  </button>
-                )}
-                {!showForce && isAdmin && (
-                  <button
-                    onClick={() => setShowForce(true)}
-                    className="w-full text-center text-xs text-text-tertiary hover:text-text-secondary"
-                  >
-                    管理员强制转化
-                  </button>
-                )}
-              </>
             )}
 
             {detailItem.status === 'CONVERTED' && detailItem.convertedProjectId && (
@@ -837,13 +823,25 @@ export default function Leads() {
               </div>
             )}
 
-            {/* 跟进记录 */}
-            <div className="border-t border-border pt-4">
-              <p className="text-sm font-medium text-text-primary mb-3">跟进记录</p>
+            {/* 备注 */}
+            <DetailSection title="备注">
+              <DetailField
+                label="备注"
+                span
+                value={detailItem.notes ? <span className="whitespace-pre-wrap">{detailItem.notes}</span> : undefined}
+              />
+            </DetailSection>
+
+            {/* 跟进记录（空模块折叠为占位条） */}
+            <DetailCollapsible
+              title="跟进记录"
+              count={followUps.data?.length || 0}
+              isEmpty={!followUps.isLoading && (followUps.data?.length || 0) === 0}
+              emptyText="暂无跟进记录"
+              emptyHint="点击「记录跟进」补充第一次触达——门禁要求至少一次有效跟进"
+            >
               {followUps.isLoading ? (
                 <Loader2 size={16} className="animate-spin text-primary" />
-              ) : followUps.data?.length === 0 ? (
-                <p className="text-sm text-text-tertiary">暂无跟进记录</p>
               ) : (
                 <div className="space-y-3">
                   {followUps.data?.map((fu: LeadFollowUp) => (
@@ -863,26 +861,29 @@ export default function Leads() {
                   ))}
                 </div>
               )}
-            </div>
+            </DetailCollapsible>
 
-            {/* 时间线 */}
-            {timeline.data && timeline.data.length > 0 && (
-              <div className="border-t border-border pt-4">
-                <p className="text-sm font-medium text-text-primary mb-3">关键事件</p>
-                <div className="space-y-2">
-                  {timeline.data.map((event: Record<string, unknown>, idx: number) => (
-                    <div key={idx} className="flex items-start gap-2 text-sm">
-                      <span className="mt-1 h-1.5 w-1.5 rounded-full bg-primary" />
-                      <div>
-                        <p className="text-text-primary">{event.eventType as string}</p>
-                        <p className="text-xs text-text-tertiary">{new Date(event.eventTime as string).toLocaleString('zh-CN')}</p>
-                      </div>
+            {/* 关键事件（空模块折叠为占位条） */}
+            <DetailCollapsible
+              title="关键事件"
+              count={timeline.data?.length || 0}
+              isEmpty={!timeline.isLoading && (timeline.data?.length || 0) === 0}
+              emptyText="暂无关键事件"
+              emptyHint="转化 / 流失 / 评分等节点事件将在此沉淀"
+            >
+              <div className="space-y-2">
+                {timeline.data?.map((event: Record<string, unknown>, idx: number) => (
+                  <div key={idx} className="flex items-start gap-2 text-sm">
+                    <span className="mt-1 h-1.5 w-1.5 rounded-full bg-primary" />
+                    <div>
+                      <p className="text-text-primary">{event.eventType as string}</p>
+                      <p className="text-xs text-text-tertiary">{new Date(event.eventTime as string).toLocaleString('zh-CN')}</p>
                     </div>
-                  ))}
-                </div>
+                  </div>
+                ))}
               </div>
-            )}
-          </div>
+            </DetailCollapsible>
+          </DetailLayout>
         )}
       </Drawer>
 

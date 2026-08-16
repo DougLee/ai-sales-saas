@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Plus, Loader2, Pencil, Trash2, ChevronLeft, ChevronRight, Calendar, Flag, AlertTriangle, Building2, Briefcase, Magnet, Search, ArrowUpRight, Check, Upload, Mic, Paperclip } from 'lucide-react'
+import { Plus, Loader2, Pencil, Trash2, ChevronLeft, ChevronRight, Calendar, Flag, AlertTriangle, Building2, Briefcase, Magnet, Search, ArrowUpRight, Check, Upload, Mic, Paperclip, XCircle, RefreshCw } from 'lucide-react'
 import { useProjects, useProject, useDeleteProject, useUpdateProject, useUpdateGateField, useProjectMetrics, WAITING_STATUSES, type Project, type WaitingStatus } from '../hooks/use-projects.js'
 import { useDecisionChain, useUpdateDecisionChain } from '../hooks/use-decision-chain.js'
 import { DecisionChainMap } from '../components/projects/decision-chain-map.js'
@@ -20,6 +20,7 @@ import VisitDetailDrawer from '../components/visits/visit-detail-drawer.js'
 import { EmptyState, LoadingState, ErrorState } from '../components/ui/states.js'
 import { useConfirmDialog } from '../hooks/use-confirm-dialog.js'
 import { TimelineView } from '../components/timeline/timeline-view.js'
+import { DetailLayout, DetailCollapsible } from '../components/detail/detail-layout.js'
 
 const milestoneLabels = [
   '初识客户', '明确痛点', '明确需求', '明确经费',
@@ -648,98 +649,83 @@ export default function Projects() {
 
       <ProjectForm open={open} onClose={handleClose} initialData={editingItem} />
 
-      <Drawer open={!!detailId} onClose={handleCloseDetail} title="商机详情" width="720px">
+      {/* 商机详情（D3 工作台 lg 双栏：头区主行动「提交推进材料」+ 左栏推进卡主线 + 右栏 AI 作战室） */}
+      <Drawer open={!!detailId} onClose={handleCloseDetail} title="商机详情" size="lg">
         {detailId && !detailItem && <LoadingState />}
         {detailItem && (
-          <div className="space-y-5">
-            {/* Header */}
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1 text-[11px] text-text-tertiary">
-                  商机推进 <ChevronRight size={10} /> M{detailItem.milestone} {milestoneLabels[detailItem.milestone]}
-                </div>
-                <h3 className="flex flex-wrap items-center gap-1.5 text-lg font-semibold text-text-primary">
-                  {detailItem.name}
-                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">L2 · 商机</span>
-                  {detailItem.sourceLeadId && detailItem.milestone > 0 && (
-                    <button
-                      onClick={() => navigate(`/leads?id=${detailItem.sourceLeadId}`)}
-                      className="flex items-center gap-0.5 rounded-full bg-success/10 px-2 py-0.5 text-[11px] font-semibold text-success transition-colors hover:bg-success/20"
-                      title="查看来源线索"
-                    >
-                      <ArrowUpRight size={10} /> 线索转化定级落位
-                    </button>
-                  )}
-                  {detailItem.healthScore != null && (
-                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                      detailItem.healthScore >= 70 ? 'bg-success/10 text-success' : detailItem.healthScore >= 40 ? 'bg-warning/10 text-warning' : 'bg-danger/10 text-danger'
-                    }`}>健康 {detailItem.healthScore}</span>
-                  )}
-                  {detailItem.derivation?.illusion && (
-                    <span className="rounded-full border border-dashed border-danger px-2 py-0.5 text-[11px] font-semibold text-danger">疑似幻觉</span>
-                  )}
-                </h3>
-                <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-text-secondary">
-                  {detailItem.company?.name && (
-                    <button
-                      onClick={() => navigate(entityRouteTo('customer', detailItem.company!.id))}
-                      className="flex items-center gap-1 text-primary hover:underline"
-                    >
-                      <Building2 size={12} /> {detailItem.company.name}
-                    </button>
-                  )}
-                  {detailItem.industry && (
-                    <span className="flex items-center gap-1">
-                      <Briefcase size={12} /> {detailItem.industry}
-                    </span>
-                  )}
-                </div>
-              </div>
-              <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-                <button
-                  onClick={() => setVisitFormOpen(true)}
-                  className="flex items-center gap-1 rounded-lg bg-success px-2.5 py-1 text-xs font-medium text-white hover:bg-success/90 transition-colors"
-                  title="记录拜访"
-                >
-                  <Plus size={12} /> 记录拜访
-                </button>
-                {/* 闭环操作（ADR-0004 决策 8） */}
-                {!detailItem.closedAt ? (
-                  <span className="flex items-center gap-1">
-                    <button
-                      onClick={() => handleMarkWon(detailItem)}
-                      disabled={update.isPending}
-                      className="rounded-lg border border-success/40 px-2 py-1 text-xs font-medium text-success transition-colors hover:bg-success/10 disabled:opacity-50"
-                    >
-                      标记赢单
-                    </button>
-                    <button
-                      onClick={() => setLoseOpen((v) => !v)}
-                      disabled={update.isPending}
-                      className="rounded-lg border border-danger/40 px-2 py-1 text-xs font-medium text-danger transition-colors hover:bg-danger/10 disabled:opacity-50"
-                    >
-                      标记流失
-                    </button>
-                  </span>
-                ) : (
-                  <span className="flex items-center gap-1.5">
-                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${detailItem.status === 'won' ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger'}`}>
-                      {detailItem.status === 'won' ? '已赢单' : '已流失'}
-                    </span>
-                    <button
-                      onClick={() => handleReactivate(detailItem)}
-                      disabled={update.isPending}
-                      className="rounded-lg border border-border px-2 py-1 text-xs text-text-secondary transition-colors hover:border-primary/40 hover:text-primary disabled:opacity-50"
-                    >
-                      重新激活
-                    </button>
-                  </span>
+          <DetailLayout
+            title={detailItem.name}
+            badges={
+              <>
+                <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">L2 · 商机</span>
+                {detailItem.healthScore != null && (
+                  <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                    detailItem.healthScore >= 70 ? 'bg-success/10 text-success' : detailItem.healthScore >= 40 ? 'bg-warning/10 text-warning' : 'bg-danger/10 text-danger'
+                  }`}>健康 {detailItem.healthScore}</span>
                 )}
-                <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${urgencyMap[detailItem.urgency]?.color || ''}`}>
+                <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${urgencyMap[detailItem.urgency]?.color || ''}`}>
                   {urgencyMap[detailItem.urgency]?.label || detailItem.urgency}
                 </span>
-              </div>
-            </div>
+                {detailItem.derivation?.illusion && (
+                  <span className="rounded-full border border-dashed border-danger px-2 py-0.5 text-[11px] font-semibold text-danger">疑似幻觉</span>
+                )}
+                {detailItem.closedAt && (
+                  <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${detailItem.status === 'won' ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger'}`}>
+                    {detailItem.status === 'won' ? '已赢单' : '已流失'}
+                  </span>
+                )}
+              </>
+            }
+            meta={
+              <>
+                <span className="flex items-center gap-0.5">
+                  商机推进 <ChevronRight size={10} /> M{detailItem.milestone} {milestoneLabels[detailItem.milestone]}
+                </span>
+                {detailItem.company?.name && (
+                  <button
+                    onClick={() => navigate(entityRouteTo('customer', detailItem.company!.id))}
+                    className="flex items-center gap-0.5 text-primary hover:underline"
+                  >
+                    <Building2 size={11} /> {detailItem.company.name}
+                  </button>
+                )}
+                {detailItem.industry && (
+                  <span className="flex items-center gap-0.5"><Briefcase size={11} /> {detailItem.industry}</span>
+                )}
+                {detailItem.sourceLeadId && detailItem.milestone > 0 && (
+                  <button
+                    onClick={() => navigate(`/leads?id=${detailItem.sourceLeadId}`)}
+                    className="flex items-center gap-0.5 rounded-full bg-success/10 px-2 py-0.5 text-[11px] font-semibold text-success transition-colors hover:bg-success/20"
+                    title="查看来源线索"
+                  >
+                    <ArrowUpRight size={10} /> 线索转化定级落位
+                  </button>
+                )}
+              </>
+            }
+            primary={
+              !detailItem.closedAt ? (
+                <button
+                  onClick={() => setVisitFormOpen(true)}
+                  className="flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3.5 text-sm font-medium text-white transition-colors hover:bg-primary/90"
+                  title="记录/上传拜访材料，AI 提取当前阶段关键信息并自动验证"
+                >
+                  <Upload size={14} /> 提交推进材料
+                </button>
+              ) : undefined
+            }
+            menu={[
+              // 闭环操作（ADR-0004 决策 8）收进 ⋯ 菜单：赢单 / 流失 / 重新激活
+              ...(!detailItem.closedAt
+                ? [
+                    { key: 'won', label: '标记赢单', icon: <Check size={14} />, onSelect: () => handleMarkWon(detailItem) },
+                    { key: 'lost', label: '标记流失', icon: <XCircle size={14} />, danger: true, onSelect: () => setLoseOpen(true) },
+                  ]
+                : [
+                    { key: 'reactivate', label: '重新激活', icon: <RefreshCw size={14} />, onSelect: () => handleReactivate(detailItem) },
+                  ]),
+            ]}
+          >
 
             {/* 流失原因内联表单（ADR-0004 决策 8） */}
             {loseOpen && !detailItem.closedAt && (
@@ -769,13 +755,13 @@ export default function Projects() {
             {/* 等待状态（V6.1 §7.2：流程性等待不计停滞） */}
             <WaitingSection projectId={detailItem.id} />
 
-            {/* 真假条五卡（ADR-0003：这单值多少/扎不扎实/动不动） */}
+            {/* 真假条（ADR-0003：值多少钱/扎不扎实/动不动）——压缩为 4 卡一行；决策链计数见右栏 */}
             {(() => {
               const d = detailItem.derivation
               const daysSince = d ? Math.floor((Date.now() - new Date(detailItem.updatedAt).getTime()) / 86400000) : 0
               const coverage = d ? Math.min(100, Math.round((d.evidenceCount / (detailItem.milestone + 1)) * 100)) : 0
               return (
-                <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-5">
+                <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
                   <div className="rounded-xl border border-border bg-background p-3">
                     <p className="text-lg font-bold text-text-primary">¥{detailItem.amount ?? '-'}<span className="text-xs font-normal">万</span></p>
                     <p className="mt-0.5 text-[11px] text-text-tertiary">预估金额</p>
@@ -792,10 +778,6 @@ export default function Projects() {
                       <div className={`h-full rounded-full ${coverage >= 60 ? 'bg-success' : 'bg-warning'}`} style={{ width: `${coverage}%` }} />
                     </div>
                     <p className="mt-0.5 text-[11px] text-text-tertiary">证据链 · 脱水校验覆盖 {coverage}%</p>
-                  </div>
-                  <div className="rounded-xl border border-border bg-background p-3">
-                    <p className="text-lg font-bold text-text-primary">{d?.decisionChainCount ?? 0}<span className="text-xs font-normal">人</span></p>
-                    <p className="mt-0.5 text-[11px] text-text-tertiary">决策链（含决策者/切入者）</p>
                   </div>
                   <div className="rounded-xl border border-border bg-background p-3">
                     {d?.waiting ? (
@@ -1028,8 +1010,6 @@ export default function Projects() {
                   )
                 })()}
 
-                {/* Decision Chain */}
-                <DecisionChainSection projectId={detailItem.id} companyId={detailItem.company?.id} companyName={detailItem.company?.name} />
               </div>
 
               {/* Right: AI 作战室 + timeline + visits + tasks */}
@@ -1083,17 +1063,21 @@ export default function Projects() {
                   })()}
                 </div>
 
+                {/* 决策链（从左栏移入：右栏 = AI 作战室 + 决策链 + 折叠活动区） */}
+                <DecisionChainSection projectId={detailItem.id} companyId={detailItem.company?.id} companyName={detailItem.company?.name} />
+
                 {/* 时间轴视图（V6.1 Phase 5：类型筛选 + 滚动加载，待确认事件不显示） */}
                 <TimelineView entityType="project" entityId={detailItem.id} title="项目时间轴" />
 
-                {/* Related Visits */}
-                <div className="rounded-xl border border-border bg-background p-4">
-                  <h4 className="mb-3 flex items-center gap-1.5 text-sm font-medium text-text-secondary">
-                    <Calendar size={14} /> 近期拜访
-                  </h4>
-                  {(!detailItem.visits || detailItem.visits.length === 0) && (
-                    <p className="text-xs text-text-tertiary">暂无拜访记录</p>
-                  )}
+                {/* 近期拜访（空模块折叠为占位条） */}
+                <DetailCollapsible
+                  title="近期拜访"
+                  icon={<Calendar size={14} />}
+                  count={detailItem.visits?.length || 0}
+                  isEmpty={!detailItem.visits || detailItem.visits.length === 0}
+                  emptyText="暂无拜访记录"
+                  emptyHint="点「提交推进材料」记录拜访，AI 自动提取关键信息"
+                >
                   <div className="space-y-2">
                     {detailItem.visits?.map((v) => (
                       <div
@@ -1118,16 +1102,17 @@ export default function Projects() {
                       </div>
                     ))}
                   </div>
-                </div>
+                </DetailCollapsible>
 
-                {/* Related Tasks */}
-                <div className="rounded-xl border border-border bg-background p-4">
-                  <h4 className="mb-3 flex items-center gap-1.5 text-sm font-medium text-text-secondary">
-                    <Flag size={14} /> 关联任务
-                  </h4>
-                  {(!detailItem.tasks || detailItem.tasks.length === 0) && (
-                    <p className="text-xs text-text-tertiary">暂无关联任务</p>
-                  )}
+                {/* 关联任务（空模块折叠为占位条） */}
+                <DetailCollapsible
+                  title="关联任务"
+                  icon={<Flag size={14} />}
+                  count={detailItem.tasks?.length || 0}
+                  isEmpty={!detailItem.tasks || detailItem.tasks.length === 0}
+                  emptyText="暂无关联任务"
+                  emptyHint="在任务页或 AI 跟进中创建的待办将显示在这里"
+                >
                   <div className="space-y-2">
                     {detailItem.tasks?.map((t) => (
                       <div key={t.id} className="flex items-center gap-3 rounded-lg bg-surface px-3 py-2">
@@ -1146,7 +1131,7 @@ export default function Projects() {
                       </div>
                     ))}
                   </div>
-                </div>
+                </DetailCollapsible>
               </div>
             </div>
 
@@ -1165,7 +1150,7 @@ export default function Projects() {
                 <span className="text-sm">该商机已停滞，建议尽快安排跟进</span>
               </div>
             )}
-          </div>
+          </DetailLayout>
         )}
       </Drawer>
 
