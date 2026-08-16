@@ -1,8 +1,12 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Plus, Search, Loader2, Pencil, Trash2, CheckCircle2, Calendar, Flag, ListTodo, ChevronDown, ChevronRight, Target } from 'lucide-react'
+import { Plus, Search, Loader2, Pencil, Trash2, CheckCircle2, Calendar, Flag, ListTodo, ChevronDown, ChevronRight, Target, AlertTriangle } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import { useTasks, useTask, useCreateTask, useUpdateTask, useCompleteTask, useDeleteTask, type Task } from '../hooks/use-tasks.js'
 import { useProjects } from '../hooks/use-projects.js'
+import { patch, put } from '../lib/api.js'
+import { toast } from '../lib/toast.js'
+import { invalidateTaskRelated } from '../lib/invalidation.js'
 import Drawer from '../components/ui/drawer.js'
 import AiEntryButton from '../components/ai/ai-entry-button.js'
 import { EmptyState, LoadingState, ErrorState } from '../components/ui/states.js'
@@ -10,6 +14,9 @@ import { PageHeader } from '../components/ui/page-header.js'
 import { StatusPill, type PillTone } from '../components/ui/status-pill.js'
 import { useConfirmDialog } from '../hooks/use-confirm-dialog.js'
 import { deadlineInfo, focusTasks, groupTasks, groupTitle, isOverdue } from '../lib/task-utils.js'
+import { TaskSourceTabs } from '../components/tasks/task-source-tabs.js'
+import { TaskBatchBar } from '../components/tasks/task-batch-bar.js'
+import { isTaskSourceFilter, matchSourcePartition, sourcePartitionCounts, type TaskSourceFilter } from '../components/tasks/task-partitions.utils.js'
 
 /* 状态→语义色映射收敛到 tone（issue #36 一色一义），颜色只在 StatusPill 内收口 */
 const priorityMap: Record<string, { label: string; tone: PillTone; strong?: boolean }> = {
@@ -55,6 +62,14 @@ const TABS: Array<{ key: string; label: string; match: (t: Task) => boolean }> =
   { key: 'all', label: '全部', match: () => true },
 ]
 
+function isDone(task: Task): boolean {
+  return task.status === 'COMPLETED' || task.status === 'CANCELLED'
+}
+
+/**
+ * 任务管理（issue #41 B：从混排到来源分区）：
+ * 状态页签 × 来源分区页签 双维过滤；逾期在组内置顶红色分离；勾选浮出批量操作条。
+ */
 export default function Tasks() {
   const [search, setSearch] = useState('')
   const [searchParams, setSearchParams] = useSearchParams()
@@ -68,9 +83,23 @@ export default function Tasks() {
       return next
     }, { replace: true })
   }
+  // 来源分区页签同样进 URL（manual/ai/followUp/system），非法值回退 all
+  const rawSrc = searchParams.get('src')
+  const src: TaskSourceFilter = isTaskSourceFilter(rawSrc) ? rawSrc : 'all'
+  const setSource = (v: TaskSourceFilter) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev)
+      if (v === 'all') next.delete('src')
+      else next.set('src', v)
+      return next
+    }, { replace: true })
+  }
   const [openForm, setOpenForm] = useState(false)
   const [editingItem, setEditingItem] = useState<Task | undefined>(undefined)
   const [detailId, setDetailId] = useState<string | undefined>(undefined)
+  // 批量模式：勾选集合 + 批量操作进行中标记
+  const [selected, setSelected] = useState<Set<string>>(() => new Set())
+  const [batchBusy, setBatchBusy] = useState(false)
   // 分组折叠状态持久化：组多的页面只展开关心的组
   const [collapsedMap, setCollapsedMap] = useState<Record<string, boolean>>(() => {
     try {
@@ -98,6 +127,7 @@ export default function Tasks() {
   const complete = useCompleteTask()
   const del = useDeleteTask()
   const confirmDialog = useConfirmDialog()
+  const queryClient = useQueryClient()
   const saving = create.isPending || update.isPending
 
   const allTasks = useMemo(() => data?.items || [], [data])
@@ -108,11 +138,17 @@ export default function Tasks() {
     setSearchParams({}, { replace: true })
   }, [taskId, setSearchParams])
 
+  // 切状态/来源分区即清空勾选：批量操作只对当前看得见的任务生效
+  useEffect(() => {
+    setSelected(new Set())
+  }, [tab, src])
+
   const activeTab = TABS.find((t) => t.key === tab) || TABS[0]
   const searched = allTasks.filter((t) =>
     !search || t.title.toLowerCase().includes(search.toLowerCase())
   )
-  const visibleTasks = searched.filter(activeTab.match)
+  const sourceCounts = useMemo(() => sourcePartitionCounts(searched), [searched])
+  const visibleTasks = searched.filter(activeTab.match).filter((t) => matchSourcePartition(t, src))
   const groups = groupTasks(visibleTasks)
   const overdueCount = allTasks.filter(isOverdue).length
   // 今日聚焦：只在「进行中」页签展示（逾期 + 今天到期），每天清零的清单
@@ -120,6 +156,63 @@ export default function Tasks() {
     () => (activeTab.key === 'active' ? focusTasks(searched) : []),
     [activeTab.key, searched],
   )
+
+  // 可勾选的（当前视图内未完成的）任务与全选状态
+  const selectableTasks = useMemo(
+    () => visibleTasks.filter((t) => !isDone(t)),
+    [visibleTasks],
+  )
+  const allSelected = selectableTasks.length > 0 && selectableTasks.every((t) => selected.has(t.id))
+  const toggleSelect = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+  const toggleSelectAllVisible = () => {
+    setSelected((prev) => {
+      if (selectableTasks.every((t) => prev.has(t.id))) return new Set()
+      return new Set(selectableTasks.map((t) => t.id))
+    })
+  }
+
+  /** 批量操作：前端循环调现有单条接口（D4 务实取舍），一次失效 + 汇总提示 */
+  const runBatch = async (ids: string[], op: (id: string) => Promise<unknown>, label: string) => {
+    setBatchBusy(true)
+    const results = await Promise.allSettled(ids.map((id) => op(id)))
+    const ok = results.filter((r) => r.status === 'fulfilled').length
+    const failed = ids.length - ok
+    if (failed === 0) toast.success(`${label} ${ok} 项`)
+    else toast.error(`${label} ${ok} 项，${failed} 项失败`)
+    invalidateTaskRelated(queryClient)
+    setSelected(new Set())
+    setBatchBusy(false)
+  }
+
+  const handleBatchComplete = async () => {
+    const ids = [...selected]
+    if (ids.length === 0) return
+    if (!(await confirmDialog.confirm({
+      title: '批量完成任务',
+      description: `确定将选中的 ${ids.length} 个任务标记为完成吗？`,
+      confirmLabel: '批量完成',
+    }))) return
+    await runBatch(ids, (id) => patch(`/api/tasks/${id}/complete`), '已完成')
+  }
+
+  const handleBatchCancel = async () => {
+    const ids = [...selected]
+    if (ids.length === 0) return
+    if (!(await confirmDialog.confirm({
+      title: '批量取消任务',
+      description: `确定取消选中的 ${ids.length} 个任务吗？取消后可在「已取消」页签找回。`,
+      confirmLabel: '批量取消',
+      danger: true,
+    }))) return
+    await runBatch(ids, (id) => put(`/api/tasks/${id}`, { status: 'CANCELLED' }), '已取消')
+  }
 
   const handleEdit = (task: Task) => {
     setEditingItem(task)
@@ -209,6 +302,21 @@ export default function Tasks() {
         })}
       </div>
 
+      {/* 来源分区页签：手动创建 / AI 提取 / 跟进提醒 / 系统巡检——真实承诺与系统噪音分家 */}
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <TaskSourceTabs value={src} counts={sourceCounts} onChange={setSource} />
+        {activeTab.key === 'active' && selectableTasks.length > 0 && (
+          <button
+            type="button"
+            onClick={toggleSelectAllVisible}
+            className="mb-1 flex items-center gap-1.5 rounded-xl border border-border bg-surface px-3 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:border-primary/40 hover:text-primary"
+          >
+            <CheckCircle2 size={13} />
+            {allSelected ? '取消全选' : `全选 ${selectableTasks.length} 条`}
+          </button>
+        )}
+      </div>
+
       {/* 今日聚焦：逾期 + 今天到期，跨项目聚合，每天清零 */}
       {focusList.length > 0 && (
         <div className="rounded-2xl border border-warning/40 bg-warning/5">
@@ -266,16 +374,106 @@ export default function Tasks() {
         {!isLoading && !error && visibleTasks.length === 0 && (
           <EmptyState
             icon={ListTodo}
-            title={search ? '没有匹配的任务' : activeTab.key === 'active' ? '暂无进行中的任务' : '暂无任务'}
-            description={activeTab.key === 'active' && !search ? '点击右上角「新建任务」开始安排工作' : undefined}
+            title={
+              search ? '没有匹配的任务' :
+              src !== 'all' ? '该来源分区暂无任务' :
+              activeTab.key === 'active' ? '暂无进行中的任务' : '暂无任务'
+            }
+            description={activeTab.key === 'active' && !search && src === 'all' ? '点击右上角「新建任务」开始安排工作' : undefined}
           />
         )}
 
         {!isLoading && !error && groups.map((group) => {
-          const groupOverdue = group.tasks.filter(isOverdue).length
+          const groupOverdueTasks = group.tasks.filter(isOverdue)
+          const groupNormalTasks = group.tasks.filter((t) => !isOverdue(t))
+          const groupOverdue = groupOverdueTasks.length
           const groupDueToday = group.tasks.filter((t) => deadlineInfo(t)?.tone === 'warning').length
           // 搜索时强制展开，避免命中结果被折叠藏住
           const collapsed = !search && !!collapsedMap[group.key]
+          const renderRow = (task: Task, overdue: boolean) => {
+            const info = deadlineInfo(task)
+            const done = isDone(task)
+            return (
+              <div
+                key={task.id}
+                className={`flex items-center justify-between gap-3 px-5 py-3.5 transition-colors cursor-pointer ${
+                  overdue ? 'bg-danger/[0.04] hover:bg-danger/10' : 'hover:bg-surface-elevated/50'
+                }`}
+                onClick={() => setDetailId(task.id)}
+              >
+                <div className="flex min-w-0 items-center gap-3">
+                  {!done && (
+                    <input
+                      type="checkbox"
+                      checked={selected.has(task.id)}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={() => toggleSelect(task.id)}
+                      aria-label={`选择任务：${task.title}`}
+                      className="h-4 w-4 shrink-0 cursor-pointer accent-primary"
+                    />
+                  )}
+                  {task.status === 'COMPLETED' ? (
+                    <CheckCircle2 size={20} className="shrink-0 text-success" />
+                  ) : (
+                    <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${PRIORITY_ICON_CLS[task.priority] || ''}`}>
+                      <Flag size={14} />
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <p className={`truncate font-medium text-text-primary ${done ? 'line-through text-text-tertiary' : ''}`}>
+                      {task.title}
+                    </p>
+                    <div className="flex items-center gap-3 text-sm text-text-secondary">
+                      {info && (
+                        <span className={`flex items-center gap-1 whitespace-nowrap ${
+                          info.tone === 'danger' ? 'font-medium text-danger' :
+                          info.tone === 'warning' ? 'font-medium text-warning' :
+                          'text-text-tertiary'
+                        }`}>
+                          <Calendar size={12} />
+                          {info.text}
+                        </span>
+                      )}
+                      {task.source && sourceMap[task.source] && (
+                        <StatusPill tone={sourceMap[task.source].tone}>
+                          {sourceMap[task.source].label}
+                        </StatusPill>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                  <StatusPill tone={statusMap[task.status]?.tone ?? 'neutral'}>
+                    {statusMap[task.status]?.label || task.status}
+                  </StatusPill>
+                  {!done && (
+                    <button
+                      onClick={() => complete.mutate(task.id)}
+                      disabled={complete.isPending}
+                      className="rounded-lg p-1.5 text-text-tertiary hover:bg-success/10 hover:text-success transition-colors disabled:opacity-50"
+                      title="标记完成"
+                    >
+                      <CheckCircle2 size={14} />
+                    </button>
+                  )}
+                  <button
+                    onClick={() => handleEdit(task)}
+                    className="rounded-lg p-1.5 text-text-tertiary hover:bg-surface-elevated hover:text-text-secondary transition-colors"
+                    title="编辑"
+                  >
+                    <Pencil size={14} />
+                  </button>
+                  <button
+                    onClick={() => handleDelete(task.id)}
+                    className="rounded-lg p-1.5 text-text-tertiary hover:bg-danger/10 hover:text-danger transition-colors"
+                    title="删除"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              </div>
+            )
+          }
           return (
             <div key={group.key} className="rounded-2xl border border-border bg-surface">
               {/* 组头：客户 · 商机（点击折叠/展开） */}
@@ -299,84 +497,30 @@ export default function Tasks() {
               </button>
               {!collapsed && (
                 <div className="divide-y divide-border border-t border-border">
-                  {group.tasks.map((task) => {
-                    const info = deadlineInfo(task)
-                    const done = task.status === 'COMPLETED' || task.status === 'CANCELLED'
-                    return (
-                      <div
-                        key={task.id}
-                        className="flex items-center justify-between gap-3 px-5 py-3.5 hover:bg-surface-elevated/50 transition-colors cursor-pointer"
-                        onClick={() => setDetailId(task.id)}
-                      >
-                        <div className="flex min-w-0 items-center gap-3">
-                          {task.status === 'COMPLETED' ? (
-                            <CheckCircle2 size={20} className="shrink-0 text-success" />
-                          ) : (
-                            <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${PRIORITY_ICON_CLS[task.priority] || ''}`}>
-                              <Flag size={14} />
-                            </div>
-                          )}
-                          <div className="min-w-0">
-                            <p className={`truncate font-medium text-text-primary ${done ? 'line-through text-text-tertiary' : ''}`}>
-                              {task.title}
-                            </p>
-                            <div className="flex items-center gap-3 text-sm text-text-secondary">
-                              {info && (
-                                <span className={`flex items-center gap-1 whitespace-nowrap ${
-                                  info.tone === 'danger' ? 'font-medium text-danger' :
-                                  info.tone === 'warning' ? 'font-medium text-warning' :
-                                  'text-text-tertiary'
-                                }`}>
-                                  <Calendar size={12} />
-                                  {info.text}
-                                </span>
-                              )}
-                              {task.source && sourceMap[task.source] && (
-                                <StatusPill tone={sourceMap[task.source].tone}>
-                                  {sourceMap[task.source].label}
-                                </StatusPill>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="flex shrink-0 items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                          <StatusPill tone={statusMap[task.status]?.tone ?? 'neutral'}>
-                            {statusMap[task.status]?.label || task.status}
-                          </StatusPill>
-                          {!done && (
-                            <button
-                              onClick={() => complete.mutate(task.id)}
-                              disabled={complete.isPending}
-                              className="rounded-lg p-1.5 text-text-tertiary hover:bg-success/10 hover:text-success transition-colors disabled:opacity-50"
-                              title="标记完成"
-                            >
-                              <CheckCircle2 size={14} />
-                            </button>
-                          )}
-                          <button
-                            onClick={() => handleEdit(task)}
-                            className="rounded-lg p-1.5 text-text-tertiary hover:bg-surface-elevated hover:text-text-secondary transition-colors"
-                            title="编辑"
-                          >
-                            <Pencil size={14} />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(task.id)}
-                            className="rounded-lg p-1.5 text-text-tertiary hover:bg-danger/10 hover:text-danger transition-colors"
-                            title="删除"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      </div>
-                    )
-                  })}
+                  {/* 逾期分区：置顶 + 红色日期 + 危险底色，与正常任务视觉分离 */}
+                  {groupOverdue > 0 && (
+                    <div className="flex items-center gap-1.5 bg-danger/5 px-5 py-1.5 text-[11px] font-semibold text-danger">
+                      <AlertTriangle size={12} aria-hidden />
+                      已逾期 {groupOverdue} 条
+                    </div>
+                  )}
+                  {groupOverdueTasks.map((task) => renderRow(task, true))}
+                  {groupNormalTasks.map((task) => renderRow(task, false))}
                 </div>
               )}
             </div>
           )
         })}
       </div>
+
+      {/* 批量操作条：勾选后浮出 */}
+      <TaskBatchBar
+        count={selected.size}
+        busy={batchBusy}
+        onComplete={handleBatchComplete}
+        onCancel={handleBatchCancel}
+        onClear={() => setSelected(new Set())}
+      />
 
       {/* Form Drawer */}
       <Drawer open={openForm} onClose={() => { if (!saving) { setOpenForm(false); setEditingItem(undefined) } }} title={editingItem ? '编辑任务' : '新建任务'}>
