@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Moon, Sun, Globe, Shield, Brain, BookOpen, ChevronDown, ChevronUp, Loader2, Zap, Download, Pencil, Check, X, Key, Server, Cpu, Search, Mic, Users } from 'lucide-react'
 import { useTheme } from '../hooks/use-theme.js'
-import { PageHeader } from '../components/ui/page-header.js'
-import { SectionCard } from '../components/ui/section-card.js'
 import { useMethodologyConfigs, useCreateMethodologyConfig } from '../hooks/use-methodology-config.js'
 import MemberManager from '../components/settings/member-manager.js'
 import { get, post } from '../lib/api.js'
@@ -190,11 +188,12 @@ export default function Settings() {
 
   return (
     <div className="max-w-3xl space-y-6">
-      <PageHeader title="系统设置" subtitle="外观、AI 能力与组织配置" />
+      <h2 className="text-xl font-semibold text-text-primary">系统设置</h2>
 
       {/* 外观 */}
-      <SectionCard title="外观" padded={false}>
-        <div className="divide-y divide-border">
+      <section>
+        <h3 className="mb-3 text-sm font-medium text-text-secondary">外观</h3>
+        <div className="rounded-2xl border border-border bg-surface divide-y divide-border">
           <div className="flex items-center justify-between px-6 py-4">
             <div className="flex items-center gap-3">
               {isDark ? <Moon size={18} className="text-primary" /> : <Sun size={18} className="text-warning" />}
@@ -224,11 +223,12 @@ export default function Settings() {
             <span className="text-xs text-text-tertiary">即将上线</span>
           </div>
         </div>
-      </SectionCard>
+      </section>
 
       {/* AI 配置 */}
-      <SectionCard title="AI 配置" padded={false}>
-        <div className="divide-y divide-border">
+      <section>
+        <h3 className="mb-3 text-sm font-medium text-text-secondary">AI 配置</h3>
+        <div className="rounded-2xl border border-border bg-surface divide-y divide-border">
           {aiLoading && (
             <div className="flex items-center justify-center p-8">
               <Loader2 size={20} className="animate-spin text-primary" />
@@ -537,11 +537,14 @@ export default function Settings() {
             </>
           )}
         </div>
-      </SectionCard>
+      </section>
 
-      {/* 销售方法论 */}
-      <SectionCard title="销售方法论" padded={false}>
-        <>
+      {/* 销售方法论：核心引擎配置，不再对使用者暴露（2026-08-16 隐藏；数据/API/里程碑门禁逻辑不动，
+          管理入口如需恢复见 git 历史或后续做 SUPER_ADMIN 专属页） */}
+      {false && (
+      <section>
+        <h3 className="mb-3 text-sm font-medium text-text-secondary">销售方法论</h3>
+        <div className="rounded-2xl border border-border bg-surface">
           {methodologyLoading && (
             <div className="flex items-center justify-center p-8">
               <Loader2 size={20} className="animate-spin text-primary" />
@@ -674,12 +677,14 @@ export default function Settings() {
               </div>
             )
           })}
-        </>
-      </SectionCard>
+        </div>
+      </section>
+      )}
 
       {/* 组织与成员 */}
-      <SectionCard title="组织与成员" padded={false}>
-        <div className="divide-y divide-border">
+      <section>
+        <h3 className="mb-3 text-sm font-medium text-text-secondary">组织与成员</h3>
+        <div className="rounded-2xl border border-border bg-surface divide-y divide-border">
           <div className="flex items-center justify-between px-6 py-4">
             <div className="flex items-center gap-3">
               <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10">
@@ -698,13 +703,14 @@ export default function Settings() {
             </button>
           </div>
         </div>
-      </SectionCard>
+      </section>
 
       <MemberManager open={showMembers} onClose={() => setShowMembers(false)} />
 
       {/* 安全与隐私 */}
-      <SectionCard title="安全与隐私" padded={false}>
-        <div className="divide-y divide-border">
+      <section>
+        <h3 className="mb-3 text-sm font-medium text-text-secondary">安全与隐私</h3>
+        <div className="rounded-2xl border border-border bg-surface divide-y divide-border">
           <div className="px-6 py-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -734,7 +740,7 @@ export default function Settings() {
             </div>
           </div>
         </div>
-      </SectionCard>
+      </section>
     </div>
   )
 }
