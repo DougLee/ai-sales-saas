@@ -157,7 +157,8 @@ export async function list(req: FastifyRequest, reply: FastifyReply) {
         skip,
         take,
         include: {
-          _count: { select: { projects: true, leads: true, visits: true, tasks: true } },
+          // contacts 计数供客户×联系人合一主档视图（issue #43）：无联系人筛选 + 督导统计的粗筛口径
+          _count: { select: { projects: true, leads: true, visits: true, tasks: true, contacts: true } },
           owner: { select: { id: true, name: true } },
         },
       }),

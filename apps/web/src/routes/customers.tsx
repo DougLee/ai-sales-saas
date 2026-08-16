@@ -1,11 +1,17 @@
-import { useEffect, useState } from 'react'
-import { Plus, Search, Loader2, Trash2, Users, MapPin, FolderOpen, ArrowRight, Pencil, Calendar, Flag, Hand, UserX, AlertTriangle, GitMerge, Bot, History, Check, RefreshCw, XCircle } from 'lucide-react'
+import { Fragment, useCallback, useEffect, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { Plus, Search, Loader2, Trash2, Users, MapPin, FolderOpen, ArrowRight, Pencil, Calendar, Flag, Hand, UserX, AlertTriangle, GitMerge, Bot, History, Check, RefreshCw, XCircle, ChevronRight } from 'lucide-react'
 import { useCompanies, useDeleteCompany, useClaimCompany, useAssignCompany, useUpdateCompanyStatus, useCompanyMissingFields, useCompanyChangeHistory, useMergeCompany, useCompanyDuplicates, useCompanyMetrics, useBatchCompany, useAssignableUsers } from '../hooks/use-companies.js'
-import { useCompany } from '../hooks/use-companies.js'
+import { useCompany, type CompanyDetail } from '../hooks/use-companies.js'
 import { useCanAssign } from '../hooks/use-permission.js'
 import { useDebouncedValue } from '../hooks/use-debounced-value.js'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { entityRouteTo } from '../lib/entity-links.js'
+import { get } from '../lib/api.js'
+import ContactStrip, { type StripContact } from '../components/customers/contact-strip.js'
+import ContactFormDrawer from '../components/customers/contact-form-drawer.js'
+import SupervisionBar from '../components/customers/supervision-bar.js'
+import { isPendingRole, lacksDecisionMaker, PENDING_ROLE_KEY, roleMetaOf } from '../components/customers/roles.js'
 import { INDUSTRY_OPTIONS, SOURCE_OPTIONS, LEVEL_OPTIONS, sourceLabel, industryLabel } from '../lib/company-options.js'
 import Stage from '../components/ui/stage.js'
 import VisitDetailDrawer from '../components/visits/visit-detail-drawer.js'
@@ -78,6 +84,20 @@ const VIEW_TABS = [
   { key: 'all', label: '全部客户' },
 ] as const
 
+/** 列表行：useCompanies 的 item + _count.contacts（issue #43 列表接口已扩展） */
+type CompanyWithContacts = NonNullable<ReturnType<typeof useCompanies>['data']>['items'][number] & {
+  _count?: { contacts?: number }
+}
+
+/** 两层筛选：联系人属性（决策角色五选一） */
+const ROLE_FILTER_OPTIONS = [
+  { value: 'DECISION_MAKER', label: '含决策者' },
+  { value: 'EVALUATOR', label: '含影响力者' },
+  { value: 'USER', label: '含使用者' },
+  { value: 'COACH', label: '含切入者' },
+  { value: PENDING_ROLE_KEY, label: '含待定角色' },
+] as const
+
 export default function Customers() {
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebouncedValue(search)
@@ -100,6 +120,16 @@ export default function Customers() {
   const [pageSize, setPageSize] = useState(20)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [batchOwnerId, setBatchOwnerId] = useState('')
+  // 客户×联系人合一主档视图（issue #43）
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
+  /** 联系人档案登记表：条带展开 / 督导检查后填充（readonly = SALES 只读详情，角色不可判） */
+  const [contactRegistry, setContactRegistry] = useState<Record<string, { contacts: StripContact[]; readonly?: boolean }>>({})
+  const [fRole, setFRole] = useState('')
+  const [fContacts, setFContacts] = useState<'all' | 'with' | 'none'>('all')
+  const [fMissingDM, setFMissingDM] = useState(false)
+  const [checking, setChecking] = useState(false)
+  /** 条带「＋ 添加联系人」表单（companyId 自动锁定） */
+  const [contactForm, setContactForm] = useState<{ companyId: string; companyName: string; role?: string } | undefined>(undefined)
 
   const { data, isLoading, error } = useCompanies({
     search: debouncedSearch,
@@ -163,10 +193,102 @@ export default function Customers() {
     setSelectedIds(new Set())
   }, [debouncedSearch, tab, fIndustry, fLevel, fRegion, fSource, fOwnerId, pageSize, page])
 
-  const companies = data?.items || []
+  const companies = (data?.items || []) as CompanyWithContacts[]
   const totalCount = data?.total ?? companies.length
   const totalPages = Math.max(Math.ceil(totalCount / pageSize), 1)
   const counts = data?.counts || {}
+
+  const qc = useQueryClient()
+
+  // ── 联系人条带 + 两层筛选 + 督导统计（issue #43） ──────────────────────────
+  const contactCountOf = (c: CompanyWithContacts) => c._count?.contacts ?? 0
+  /** 已知档案（条带展开/督导检查过且非只读）；undefined = 角色未知（只能粗筛） */
+  const knownContactsOf = (c: CompanyWithContacts): StripContact[] | undefined => {
+    const entry = contactRegistry[c.id]
+    if (!entry || entry.readonly) return undefined
+    return entry.contacts
+  }
+
+  /** 条带上报：登记 contacts 供两层筛选精确筛 + 督导统计（useCallback 保证 ContactStrip 的 effect 稳定） */
+  const registerContacts = useCallback((companyId: string, contacts: StripContact[], readonly: boolean) => {
+    setContactRegistry((prev) => {
+      const existing = prev[companyId]
+      if (existing && existing.contacts === contacts && !!existing.readonly === readonly) return prev
+      return { ...prev, [companyId]: { contacts, readonly } }
+    })
+  }, [])
+
+  const roleFilterActive = fRole !== '' || fMissingDM
+  let ambiguousCount = 0
+  /** 两层筛选第二层：联系人属性纯前端筛——已知档案精确筛；未展开且有联系人的按「有联系人」粗筛放行 */
+  const visibleCompanies = companies.filter((c) => {
+    const count = contactCountOf(c)
+    if (fContacts === 'with' && count === 0) return false
+    if (fContacts === 'none' && count !== 0) return false
+    if (!roleFilterActive) return true
+    const known = knownContactsOf(c)
+    if (!known) {
+      if (count === 0) return false // 无联系人必然不含任何角色
+      ambiguousCount += 1 // 有联系人但角色未知 → 粗筛放行，提示可督导检查精确化
+      return true
+    }
+    if (fMissingDM && !lacksDecisionMaker(known)) return false
+    if (fRole === PENDING_ROLE_KEY) {
+      if (!known.some((ct) => isPendingRole(ct.decisionRole))) return false
+    } else if (fRole && !known.some((ct) => ct.decisionRole === fRole)) {
+      return false
+    }
+    return true
+  })
+
+  // 督导统计（前端聚合，当前页口径）
+  const noContactCount = companies.filter((c) => contactCountOf(c) === 0).length
+  const knownCount = companies.filter((c) => contactRegistry[c.id] !== undefined).length
+  const allKnown = companies.length > 0 && knownCount >= companies.length
+  const missingDecisionMakerCount = allKnown
+    ? companies.filter((c) => {
+        const known = knownContactsOf(c)
+        return known ? lacksDecisionMaker(known) : false
+      }).length
+    : null
+
+  /** 督导检查：批量取本页客户 detail（与条带/详情抽屉同缓存键），登记角色覆盖 */
+  const runSupervisionCheck = async () => {
+    if (checking || companies.length === 0) return
+    setChecking(true)
+    try {
+      const results = await Promise.all(
+        companies.map(async (c) => {
+          try {
+            const detail = await qc.fetchQuery({
+              queryKey: ['company', c.id],
+              queryFn: () => get<CompanyDetail>(`/api/companies/${c.id}`),
+              staleTime: 30_000,
+            })
+            return [c.id, { contacts: (detail._readonly ? [] : detail.contacts) as StripContact[], readonly: !!detail._readonly }] as const
+          } catch {
+            return [c.id, undefined] as const
+          }
+        }),
+      )
+      setContactRegistry((prev) => {
+        const next = { ...prev }
+        for (const [id, entry] of results) if (entry) next[id] = entry
+        return next
+      })
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  const toggleExpanded = (id: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => {
@@ -176,9 +298,10 @@ export default function Customers() {
       return next
     })
   }
-  const allSelected = companies.length > 0 && companies.every((c) => selectedIds.has(c.id))
+  const allSelected = visibleCompanies.length > 0 && visibleCompanies.every((c) => selectedIds.has(c.id))
   const toggleSelectAll = () => {
-    setSelectedIds(allSelected ? new Set() : new Set(companies.map((c) => c.id)))
+    // 全选 = 选中当前可见行（两层筛选生效时不含被前端筛掉的行）
+    setSelectedIds(allSelected ? new Set() : new Set(visibleCompanies.map((c) => c.id)))
   }
 
   const handleBatchClaim = async () => {
@@ -342,6 +465,22 @@ export default function Customers() {
         </div>
       )}
 
+      {/* 角色覆盖督导条（issue #43 统计条增强）：无联系人可直筛；缺决策者需「督导检查」批量核对后可见 */}
+      {!isLoading && !error && companies.length > 0 && (
+        <SupervisionBar
+          totalCount={companies.length}
+          knownCount={knownCount}
+          noContactCount={noContactCount}
+          noContactActive={fContacts === 'none'}
+          onToggleNoContact={() => setFContacts((v) => (v === 'none' ? 'all' : 'none'))}
+          missingDecisionMakerCount={missingDecisionMakerCount}
+          missingDecisionMakerActive={fMissingDM}
+          onToggleMissingDecisionMaker={() => setFMissingDM((v) => !v)}
+          checking={checking}
+          onCheck={runSupervisionCheck}
+        />
+      )}
+
       {/* 筛选栏 */}
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative min-w-[220px] flex-1">
@@ -379,15 +518,46 @@ export default function Customers() {
             <option key={id} value={id}>{fOwnerId === id ? `${name}（当前筛选）` : name}</option>
           ))}
         </select>
-        {(fIndustry || fLevel || fRegion || fSource || fOwnerId) && (
+        {/* 两层筛选 · 第二层：联系人属性（issue #43）——纯前端，命中数见下方提示行 */}
+        <select value={fContacts} onChange={(e) => setFContacts(e.target.value as 'all' | 'with' | 'none')} className="h-9 rounded-lg border border-border bg-surface px-2 text-xs text-text-secondary outline-none focus:border-primary cursor-pointer" title="有无联系人档案">
+          <option value="all">联系人：全部</option>
+          <option value="with">有联系人</option>
+          <option value="none">无联系人</option>
+        </select>
+        <select value={fRole} onChange={(e) => setFRole(e.target.value)} className="h-9 rounded-lg border border-border bg-surface px-2 text-xs text-text-secondary outline-none focus:border-primary cursor-pointer" title="决策角色（未展开的客户按有联系人粗筛）">
+          <option value="">决策角色：全部</option>
+          {ROLE_FILTER_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+        {(fIndustry || fLevel || fRegion || fSource || fOwnerId || fRole || fContacts !== 'all' || fMissingDM) && (
           <button
-            onClick={() => { setFIndustry(''); setFLevel(''); setFRegion(''); setFSource(''); setFOwnerId('') }}
+            onClick={() => {
+              setFIndustry(''); setFLevel(''); setFRegion(''); setFSource(''); setFOwnerId('')
+              setFRole(''); setFContacts('all'); setFMissingDM(false)
+            }}
             className="text-xs text-primary hover:underline"
           >
             清除筛选
           </button>
         )}
       </div>
+
+      {/* 两层筛选命中提示：前端筛的透明度（未展开客户粗筛口径） */}
+      {(fRole || fContacts !== 'all' || fMissingDM) && (
+        <div className="flex flex-wrap items-center gap-2 text-xs text-text-tertiary">
+          <span>
+            两层筛选生效：本页 <b className="text-text-secondary">{visibleCompanies.length}</b>/{companies.length} 家命中
+          </span>
+          {ambiguousCount > 0 && (
+            <span className="flex items-center gap-1 text-warning">
+              <AlertTriangle size={11} /> {ambiguousCount} 家未展开，按「有联系人」粗筛——
+              <button onClick={runSupervisionCheck} disabled={checking} className="font-medium text-primary hover:underline disabled:opacity-50">
+                {checking ? '核对中…' : '督导检查后精确筛选'}
+              </button>
+            </span>
+          )}
+          {fMissingDM && <span className="rounded-full bg-danger/10 px-2 py-0.5 font-medium text-danger">只看缺决策者</span>}
+        </div>
+      )}
 
       {/* 批量操作条（勾选后浮现） */}
       {selectedIds.size > 0 && (
@@ -435,15 +605,18 @@ export default function Customers() {
               </tr>
             </thead>
             <tbody>
-              {companies.map((company) => {
+              {visibleCompanies.map((company) => {
                 const days = daysAgoText(company.updatedAt)
                 const stale = daysIn(company.updatedAt) > 30
                 const needVerify = company.source === 'ai_recommendation' && daysIn(company.updatedAt) > 7
                 const levelOpt = LEVEL_OPTIONS.find((l) => l.value === company.level)
+                // 联系人条带（issue #43 主档行）：首行客户摘要 + 可展开联系人条带
+                const expanded = expandedIds.has(company.id)
+                const knownContacts = knownContactsOf(company)
                 return (
+                  <Fragment key={company.id}>
                   <tr
-                    key={company.id}
-                    className="border-b border-border/60 transition-colors last:border-0 hover:bg-primary/[0.03]"
+                    className={`border-b border-border/60 transition-colors hover:bg-primary/[0.03] ${expanded ? '' : 'last:border-0'}`}
                   >
                     <td className="px-3 py-2.5">
                       <input
@@ -478,15 +651,40 @@ export default function Customers() {
                       {industryLabel(company.industry, industryLabels)}
                     </td>
                     <td className="px-3 py-2.5 text-xs text-text-secondary">{company.region || '-'}</td>
+                    {/* 联系人（issue #43 主档行）：点击展开联系人条带；无联系人整行引导录入 */}
                     <td className="px-3 py-2.5">
-                      {company.contactPerson ? (
-                        <>
-                          <p className="text-xs text-text-primary">{company.contactPerson}</p>
-                          {company.contactPhone && <p className="text-[11px] text-text-tertiary">{company.contactPhone}</p>}
-                        </>
-                      ) : (
-                        <span className="text-[11px] text-text-tertiary">待补充</span>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => toggleExpanded(company.id)}
+                        aria-expanded={expanded}
+                        title={expanded ? '收起联系人条带' : '展开联系人条带（角色徽章 / 电话 / 缺角预警）'}
+                        className="flex items-center gap-1.5 text-left"
+                      >
+                        <ChevronRight size={13} className={`shrink-0 text-text-tertiary transition-transform ${expanded ? 'rotate-90' : ''}`} />
+                        {contactCountOf(company) === 0 ? (
+                          <span className="text-[11px] font-medium text-primary">＋ 录入第一位联系人</span>
+                        ) : (
+                          <>
+                            <span className="text-xs text-text-secondary">{contactCountOf(company)} 位</span>
+                            {knownContacts ? (
+                              <span className="flex items-center gap-0.5">
+                                {knownContacts.slice(0, 6).map((ct) => (
+                                  <span
+                                    key={ct.id}
+                                    className={`h-1.5 w-1.5 rounded-full ${roleMetaOf(ct.decisionRole).dot}`}
+                                    title={`${ct.name} · ${roleMetaOf(ct.decisionRole).label}`}
+                                  />
+                                ))}
+                                {knownContacts.length > 6 && (
+                                  <span className="text-[10px] text-text-tertiary">+{knownContacts.length - 6}</span>
+                                )}
+                              </span>
+                            ) : (
+                              <span className="text-[11px] text-text-tertiary">展开看角色</span>
+                            )}
+                          </>
+                        )}
+                      </button>
                     </td>
                     <td className="px-3 py-2.5 text-xs text-text-secondary">{sourceLabel(company.source)}</td>
                     <td className="px-3 py-2.5 text-xs">
@@ -551,6 +749,24 @@ export default function Customers() {
                       </div>
                     </td>
                   </tr>
+                  {/* 联系人条带：展开时走 useCompany 详情接口取 contacts，角色徽章对齐 #38 矩阵色系 */}
+                  {expanded && (
+                    <tr className="border-b border-border/60 last:border-0">
+                      <td colSpan={11} className="p-0">
+                        <ContactStrip
+                          companyId={company.id}
+                          companyName={company.name}
+                          open
+                          onLoaded={registerContacts}
+                          onAddContact={(presetRole) =>
+                            setContactForm({ companyId: company.id, companyName: company.name, role: presetRole })
+                          }
+                          onOpenContact={(id) => navigate(entityRouteTo('contact', id))}
+                        />
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 )
               })}
             </tbody>
@@ -559,6 +775,13 @@ export default function Customers() {
 
         {isLoading && <LoadingState />}
         {error && <ErrorState message={(error as Error).message || '加载失败'} />}
+        {!isLoading && !error && companies.length > 0 && visibleCompanies.length === 0 && (
+          <EmptyState
+            icon={Users}
+            title="本页客户均不满足联系人筛选条件"
+            description="两层筛选只作用于当前页——试试清除筛选、翻页，或点「督导检查」核对全页角色后精确筛选"
+          />
+        )}
         {!isLoading && !error && companies.length === 0 && (
           <EmptyState
             icon={Users}
@@ -1057,6 +1280,13 @@ export default function Customers() {
         open={leadFormOpen}
         onClose={() => { setLeadFormOpen(false); setLeadFormCompanyId(undefined) }}
         prefilledCompanyId={leadFormCompanyId || detailId}
+      />
+      {/* 联系人合一表单（issue #43）：从条带打开时所属客户自动锁定，禁止再选 */}
+      <ContactFormDrawer
+        open={!!contactForm}
+        onClose={() => setContactForm(undefined)}
+        lockedCompany={contactForm ? { id: contactForm.companyId, name: contactForm.companyName } : undefined}
+        defaultRole={contactForm?.role}
       />
 
       {confirmDialog.dialog}

@@ -1,30 +1,17 @@
 import { useEffect, useState } from 'react'
 import { Plus, Search, Pencil, Trash2, Users, Phone, Mail, Building2, Briefcase, User } from 'lucide-react'
-import { isValidPhone, normalizePhone, PHONE_ERROR_MESSAGE } from '@ai-sales/shared'
-import { useContacts, useContact, useCreateContact, useUpdateContact, useDeleteContact, type Contact } from '../hooks/use-contacts.js'
+import { useContacts, useContact, useDeleteContact, type Contact } from '../hooks/use-contacts.js'
 import { useCompanies } from '../hooks/use-companies.js'
 import { useDebouncedValue } from '../hooks/use-debounced-value.js'
 import { useSearchParams } from 'react-router-dom'
 import Drawer from '../components/ui/drawer.js'
-import PhoneInput from '../components/forms/phone-input.js'
 import { EmptyState, LoadingState, ErrorState } from '../components/ui/states.js'
 import { PageHeader } from '../components/ui/page-header.js'
 import { SectionCard } from '../components/ui/section-card.js'
-import { StatusPill, type PillTone } from '../components/ui/status-pill.js'
+import { StatusPill } from '../components/ui/status-pill.js'
+import ContactFormDrawer from '../components/customers/contact-form-drawer.js'
+import { roleMetaOf } from '../components/customers/roles.js'
 import { useConfirmDialog } from '../hooks/use-confirm-dialog.js'
-import { toast } from '../lib/toast.js'
-
-const roleLabels: Record<string, string> = {
-  COACH: '引导者',
-  EVALUATOR: '评估者',
-  DECISION_MAKER: '决策者',
-}
-
-const roleTones: Record<string, PillTone> = {
-  COACH: 'success',
-  EVALUATOR: 'warning',
-  DECISION_MAKER: 'danger',
-}
 
 export default function Contacts() {
   const [search, setSearch] = useState('')
@@ -32,7 +19,6 @@ export default function Contacts() {
   const [openForm, setOpenForm] = useState(false)
   const [editingItem, setEditingItem] = useState<Contact | undefined>(undefined)
   const [detailId, setDetailId] = useState<string | undefined>(undefined)
-  const [phoneValue, setPhoneValue] = useState('')
   const [searchParams, setSearchParams] = useSearchParams()
 
   const { data, isLoading, error } = useContacts({ search: debouncedSearch })
@@ -48,17 +34,10 @@ export default function Contacts() {
     setDetailId(contactId)
     setSearchParams({}, { replace: true })
   }, [contactId, setSearchParams])
-  const create = useCreateContact()
-  const update = useUpdateContact()
   const del = useDeleteContact()
   const confirmDialog = useConfirmDialog()
 
   const contacts = data?.items || []
-
-  // 打开表单时同步电话字段（PhoneInput 为受控组件）
-  useEffect(() => {
-    if (openForm) setPhoneValue(editingItem?.phone || '')
-  }, [openForm, editingItem])
 
   const handleEdit = (contact: Contact) => {
     setEditingItem(contact)
@@ -75,39 +54,11 @@ export default function Contacts() {
     del.mutate(id)
   }
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    const fd = new FormData(e.currentTarget)
-    const payload: Record<string, string> = {}
-    fd.forEach((v, k) => { if (typeof v === 'string' && v.trim()) payload[k] = v.trim() })
-
-    // 电话由受控 PhoneInput 提供，提交前归一化并校验
-    const phone = normalizePhone(phoneValue)
-    if (phone && !isValidPhone(phone)) {
-      toast.error(PHONE_ERROR_MESSAGE)
-      return
-    }
-    if (phone) payload.phone = phone
-
-    try {
-      if (editingItem) {
-        await update.mutateAsync({ id: editingItem.id, data: payload })
-      } else {
-        await create.mutateAsync(payload as never)
-      }
-      // 成功才关窗；失败保留表单内容（错误提示由 hook 的 toast 负责）
-      setOpenForm(false)
-      setEditingItem(undefined)
-    } catch {
-      /* 失败不关窗，用户已填内容不丢 */
-    }
-  }
-
   return (
     <div className="space-y-4">
       <PageHeader
         title="联系人"
-        subtitle="手动录入或从知识库导入"
+        subtitle="联系人管理（通常从客户列表进入）"
         actions={
           <>
             <div className="relative">
@@ -168,8 +119,8 @@ export default function Contacts() {
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium text-text-primary">{contact.name}</span>
                       {contact.decisionRole && (
-                        <StatusPill tone={roleTones[contact.decisionRole] ?? 'neutral'}>
-                          {roleLabels[contact.decisionRole] || contact.decisionRole}
+                        <StatusPill tone={roleMetaOf(contact.decisionRole).tone}>
+                          {roleMetaOf(contact.decisionRole).label}
                         </StatusPill>
                       )}
                     </div>
@@ -217,77 +168,13 @@ export default function Contacts() {
         )}
       </SectionCard>
 
-      {/* Form Drawer */}
-      <Drawer
+      {/* 合一表单（issue #43）：与客户列表条带共用同一表单；独立页需手动选所属客户 */}
+      <ContactFormDrawer
         open={openForm}
         onClose={() => { setOpenForm(false); setEditingItem(undefined) }}
-        title={editingItem ? '编辑联系人' : '新建联系人'}
-      >
-        <form onSubmit={handleSubmit} className="space-y-4 p-6">
-          <div>
-            <label className="mb-1 block text-sm font-medium text-text-secondary">姓名 *</label>
-            <input name="name" defaultValue={editingItem?.name} required className="h-10 w-full rounded-xl border border-border bg-background px-4 text-sm text-text-primary outline-none focus:border-primary" />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="mb-1 block text-sm font-medium text-text-secondary">职位</label>
-              <input name="position" defaultValue={editingItem?.position} className="h-10 w-full rounded-xl border border-border bg-background px-4 text-sm text-text-primary outline-none focus:border-primary" />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-text-secondary">部门</label>
-              <input name="department" defaultValue={editingItem?.department} className="h-10 w-full rounded-xl border border-border bg-background px-4 text-sm text-text-primary outline-none focus:border-primary" />
-            </div>
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-text-secondary">单位/公司</label>
-            <select
-              name="companyId"
-              defaultValue={editingItem?.companyId || ''}
-              className="h-10 w-full rounded-xl border border-border bg-background px-4 text-sm text-text-primary outline-none focus:border-primary"
-            >
-              <option value="">未选择</option>
-              {companies.map((company) => (
-                <option key={company.id} value={company.id}>{company.name}</option>
-              ))}
-            </select>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="mb-1 block text-sm font-medium text-text-secondary">电话</label>
-              <PhoneInput value={phoneValue} onChange={setPhoneValue} />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-text-secondary">邮箱</label>
-              <input name="email" type="email" defaultValue={editingItem?.email} className="h-10 w-full rounded-xl border border-border bg-background px-4 text-sm text-text-primary outline-none focus:border-primary" />
-            </div>
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-text-secondary">微信</label>
-            <input name="wechat" defaultValue={editingItem?.wechat} className="h-10 w-full rounded-xl border border-border bg-background px-4 text-sm text-text-primary outline-none focus:border-primary" />
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-text-secondary">决策角色</label>
-            <select
-              name="decisionRole"
-              defaultValue={editingItem?.decisionRole || ''}
-              className="h-10 w-full rounded-xl border border-border bg-background px-4 text-sm text-text-primary outline-none focus:border-primary"
-            >
-              <option value="">未标注</option>
-              <option value="COACH">引导者</option>
-              <option value="EVALUATOR">评估者</option>
-              <option value="DECISION_MAKER">决策者</option>
-            </select>
-          </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <button type="button" disabled={create.isPending || update.isPending} onClick={() => { setOpenForm(false); setEditingItem(undefined) }} className="rounded-xl border border-border bg-surface px-4 py-2 text-sm font-medium text-text-secondary hover:bg-surface-elevated disabled:opacity-50">
-              取消
-            </button>
-            <button type="submit" disabled={create.isPending || update.isPending} className="rounded-xl bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50">
-              {editingItem ? (update.isPending ? '保存中...' : '保存') : (create.isPending ? '创建中...' : '创建')}
-            </button>
-          </div>
-        </form>
-      </Drawer>
+        initial={editingItem}
+        companies={companies.map((c) => ({ id: c.id, name: c.name }))}
+      />
 
       {/* Detail Drawer */}
       <Drawer
@@ -306,8 +193,8 @@ export default function Contacts() {
                 <div className="flex items-center gap-2">
                   <span className="text-lg font-semibold text-text-primary">{detailItem.name}</span>
                   {detailItem.decisionRole && (
-                    <StatusPill tone={roleTones[detailItem.decisionRole] ?? 'neutral'}>
-                      {roleLabels[detailItem.decisionRole] || detailItem.decisionRole}
+                    <StatusPill tone={roleMetaOf(detailItem.decisionRole).tone}>
+                      {roleMetaOf(detailItem.decisionRole).label}
                     </StatusPill>
                   )}
                 </div>
