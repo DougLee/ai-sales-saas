@@ -539,7 +539,9 @@ export default function Settings() {
         </div>
       </section>
 
-      {/* 销售方法论 */}
+      {/* 销售方法论：核心引擎配置，不再对使用者暴露（2026-08-16 隐藏；数据/API/里程碑门禁逻辑不动，
+          管理入口如需恢复见 git 历史或后续做 SUPER_ADMIN 专属页） */}
+      {false && (
       <section>
         <h3 className="mb-3 text-sm font-medium text-text-secondary">销售方法论</h3>
         <div className="rounded-2xl border border-border bg-surface">
@@ -677,6 +679,7 @@ export default function Settings() {
           })}
         </div>
       </section>
+      )}
 
       {/* 组织与成员 */}
       <section>
