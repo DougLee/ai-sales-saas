@@ -45,6 +45,43 @@ const VisitAnalysisSchema = z.object({
   sentiment: z.string().optional(),
 })
 
+// ─── #42 归类确认：提取产物"一类一条"的聚类纯函数（生成侧只负责聚合，确认侧见 confirmations.service）───
+
+/** 任务动作聚类：本批内去重（换角度复述合并）→ 与库内未完成任务相似的不重复建议 → 上限 3 条 */
+export function clusterNextActions(raw: string[], openTaskTitles: string[]): string[] {
+  return filterSimilarTo(dedupeSimilar(raw), openTaskTitles).slice(0, 3)
+}
+
+/** 任务包 payload：主线标题=第一动作，步骤清单 actions；deadline 继承 nextActionDeadline（无则 +7 天，确认侧同规则兜底） */
+export function buildTaskPackageData(actions: string[], nextActionDeadline?: Date | null): Record<string, unknown> {
+  const titles = actions.map((a) => (a || '').trim()).filter(Boolean)
+  const hasDeadline = nextActionDeadline && !Number.isNaN(new Date(nextActionDeadline).getTime())
+  const deadline = (hasDeadline ? new Date(nextActionDeadline as Date) : new Date(Date.now() + 7 * 86400000)).toISOString()
+  return {
+    title: titles[0] || '拜访跟进任务包',
+    // content 供旧单条视图（无 steps 展示能力的组件）兜底展示
+    content: titles.join('；'),
+    actions: titles.map((title) => ({ title })),
+    deadline,
+  }
+}
+
+/** 类级条目（诉求/竞品）payload：N 条 → 1 条批 payload */
+export function buildGroupItemData(items: string[]): Record<string, unknown> {
+  return { content: items.join('；'), items }
+}
+
+/** 批内聚类：去空、去已知（档案已有值）、批内去重 */
+export function freshGroupItems(candidates: string[], known: unknown[]): string[] {
+  const kept: string[] = []
+  for (const raw of candidates) {
+    const v = (raw || '').trim()
+    if (!v || known.includes(v) || kept.includes(v)) continue
+    kept.push(v)
+  }
+  return kept
+}
+
 export async function runVisitAnalysis(prisma: PrismaClient, visitId: string, userId: string) {
   const visit = await prisma.visit.findUnique({
     where: { id: visitId },
@@ -105,7 +142,7 @@ ${content}
 7. sentiment: 整体情绪判断（积极/中性/消极）
 
 【提取纪律】
-- nextActions 最多 5 条，每条是一个独立动作；同一件事不得拆成多条或换角度重复（如"提交方案初稿"只保留一条最完整的）
+- nextActions 最多 3 条，按"推动目的"聚类：服务于同一目的的动作合并为一条完整表述，不得为凑数拆条或换角度重复（如"提交方案初稿"与"按时提交专业方案"是同一件事，只保留一条最完整的）；真正独立的事件才单独列
 - competitors/painPoints 只列名称或短语，同义词合并（"希沃"与"seewo希沃"只留一个）
 - 只提取本次拜访中真实出现的信息，不确定的不要写
 
@@ -202,26 +239,20 @@ ${content}
     })
 
     if (analysis.nextActions?.length) {
-      // 任务三级去重：① 本批内换角度复述合并；② 与库内未完成任务相似的不重复建议
+      // 任务三级去重：① 本批内换角度复述合并；② 与库内未完成任务相似的不重复建议；③ #42 聚类上限 3 条
       const openTasks = await prisma.task.findMany({
         where: { tenantId: project.tenantId, projectId: project.id, status: { in: ['PENDING', 'IN_PROGRESS'] } },
         select: { title: true },
       })
-      const freshActions = filterSimilarTo(
-        dedupeSimilar(analysis.nextActions),
-        openTasks.map((t) => t.title),
-      )
-      for (const action of freshActions) {
+      const freshActions = clusterNextActions(analysis.nextActions, openTasks.map((t) => t.title))
+      if (freshActions.length > 0) {
+        // #42 归类确认：N 条动作 → 1 个"任务包"，确认后生成 1 个主线任务（步骤清单进 description），
+        // 不再逐条灌独立任务（原先 ≤5 条 HIGH + 默认 3 天截止的任务洪水同源于此）
         await prisma.aiPendingItem.create({
           data: {
             ...base,
-            itemType: 'task',
-            itemData: {
-              title: action,
-              description: `来自拜访分析（${new Date(visit.visitTime).toLocaleDateString('zh-CN')}）的下一步行动建议`,
-              priority: 'HIGH',
-              deadline: (visit.nextActionDeadline || new Date(Date.now() + 3 * 24 * 60 * 60 * 1000)).toISOString(),
-            },
+            itemType: 'task_package',
+            itemData: buildTaskPackageData(freshActions, visit.nextActionDeadline) as never,
           },
         })
         pendingItemsCreated++
@@ -301,27 +332,27 @@ ${content}
     }
 
     if (analysis.keyInfo?.painPoints?.length) {
-      for (const pain of analysis.keyInfo.painPoints) {
-        if (!pain || knownPains.includes(pain)) continue
+      // #42 归类确认：N 条诉求 → 1 条类级条目（自动生效 + 按批可撤销，不再逐条灌收件箱）
+      const freshPains = freshGroupItems(analysis.keyInfo.painPoints, knownPains)
+      if (freshPains.length > 0) {
         await createAutoAppliedItem(prisma, {
           ...base,
-          itemType: 'key_request',
-          itemData: { content: pain },
+          itemType: 'pain_points_group',
+          itemData: buildGroupItemData(freshPains),
         })
-        knownPains.push(pain)
         pendingItemsCreated++
       }
     }
 
     if (analysis.keyInfo?.competitors?.length) {
-      for (const comp of analysis.keyInfo.competitors) {
-        if (!comp || knownCompetitors.includes(comp)) continue
+      // #42 归类确认：N 个竞品 → 1 条类级条目（自动生效 + 按批可撤销）
+      const freshCompetitors = freshGroupItems(analysis.keyInfo.competitors, knownCompetitors)
+      if (freshCompetitors.length > 0) {
         await createAutoAppliedItem(prisma, {
           ...base,
-          itemType: 'competitor_mention',
-          itemData: { content: comp },
+          itemType: 'competitors_group',
+          itemData: buildGroupItemData(freshCompetitors),
         })
-        knownCompetitors.push(comp)
         pendingItemsCreated++
       }
     }

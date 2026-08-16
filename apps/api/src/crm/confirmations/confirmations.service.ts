@@ -18,9 +18,14 @@ import { refreshClosure } from '../visits/closure.service.js'
  * - price_quote      → project.financeInfo.price（仅在为空时写入）
  * - bid_result       → project.evidence.bidResult（仅在为空时写入）
  * - task              → 实体服务层 createTask + TASK_CREATED(confirmed) 事件
+ * - task_package      → #42 归类确认：1 个主线任务（title=首动作，description=编号步骤清单，
+ *                       priority=MEDIUM，deadline=继承 nextActionDeadline 无则 +7 天）；
+ *                       modifiedData.standaloneActions 里是「单开」逃生门拆出的独立步骤
  * - budget_signal     → project.financeInfo.budget（仅在为空时写入）
  * - key_request       → project.humanInfo.painPoints 追加
  * - competitor_mention → project.businessInfo.competitors 追加
+ * - pain_points_group  → #42 类级批 payload：painPoints 数组批量追加（已存在的跳过）
+ * - competitors_group  → #42 类级批 payload：competitors 数组批量追加（已存在的跳过）
  * - decision_chain    → project.decisionMap（仅在为空时写入）
  *
  * 一次拜访的待确认项全部处理完 → 写 VISIT_CONFIRMED(confirmed) 事件 + 刷新闭环
@@ -28,8 +33,57 @@ import { refreshClosure } from '../visits/closure.service.js'
 
 export type ResolveAction = 'confirm' | 'modify' | 'reject' | 'revoke'
 
-/** V6.2 分级信任：低风险类型（首次接触方式/方案要点/报价/中标结果/诉求/竞品/决策链）自动生效、不进人工确认队列，错了可 revoke 撤回 */
-export const AUTO_APPLY_TYPES = ['first_contact', 'solution_summary', 'price_quote', 'bid_result', 'key_request', 'competitor_mention', 'decision_chain'] as const
+/** V6.2 分级信任：低风险类型（首次接触方式/方案要点/报价/中标结果/诉求/竞品/决策链）自动生效、不进人工确认队列，错了可 revoke 撤回
+ *  #42 起诉求/竞品升级为类级批 payload（pain_points_group / competitors_group），仍属自动类 */
+export const AUTO_APPLY_TYPES = ['first_contact', 'solution_summary', 'price_quote', 'bid_result', 'key_request', 'competitor_mention', 'decision_chain', 'pain_points_group', 'competitors_group'] as const
+
+/**
+ * 读侧兼容（#42）：旧单条 AiPendingItem 没有 items/actions 包装，
+ * 统一包装为单元素数组，确认/展示行为与旧单条一致。
+ */
+export function normalizeGroupItems(data: unknown): string[] {
+  const d = (data || {}) as Record<string, unknown>
+  if (Array.isArray(d.items)) {
+    return d.items.map((v) => String(v ?? '').trim()).filter(Boolean)
+  }
+  const single = String(d.content ?? d.title ?? '').trim()
+  return single ? [single] : []
+}
+
+/** 任务包步骤（读侧兼容同上：无 actions 包装时回落 title/content 单元素） */
+export interface PackageAction {
+  title: string
+  deadline?: string
+}
+
+export function normalizePackageActions(data: unknown): PackageAction[] {
+  const d = (data || {}) as Record<string, unknown>
+  if (Array.isArray(d.actions)) {
+    return d.actions
+      .map((v) => {
+        const a = (v || {}) as Record<string, unknown>
+        const title = String(a.title ?? '').trim()
+        const deadline = a.deadline ? String(a.deadline) : undefined
+        return { title, deadline }
+      })
+      .filter((a) => a.title)
+  }
+  const single = String(d.title ?? d.content ?? '').trim()
+  return single ? [{ title: single }] : []
+}
+
+/** 任务包截止：继承 nextActionDeadline（取包级与各步骤中最早的可解析时间），无则 +7 天 */
+function resolvePackageDeadline(data: Record<string, unknown>): Date {
+  const candidates: string[] = []
+  if (data.deadline) candidates.push(String(data.deadline))
+  for (const a of normalizePackageActions(data)) {
+    if (a.deadline) candidates.push(a.deadline)
+  }
+  const times = candidates
+    .map((v) => new Date(v).getTime())
+    .filter((t) => !Number.isNaN(t) && t > 0)
+  return times.length ? new Date(Math.min(...times)) : new Date(Date.now() + 7 * 86400000)
+}
 
 interface PendingItemLike {
   id: string
@@ -133,6 +187,74 @@ export async function applyConfirmedItem(
       return { taskId: task.id }
     }
 
+    case 'task_package': {
+      // #42 任务包：一包一主线任务（步骤清单进 description 编号列表），不再逐条灌任务。
+      // modifiedData.standaloneActions = 「单开任务」逃生门拆出的独立步骤（上限与主线合计 ≤2 个任务）
+      const actions = normalizePackageActions(finalData)
+      const standalone = normalizePackageActions({ actions: finalData.standaloneActions })
+      if (actions.length === 0 && standalone.length === 0) return {}
+
+      const deadline = resolvePackageDeadline(finalData)
+      let mainTaskId: string | undefined
+      const createdTitles: string[] = []
+
+      if (actions.length > 0) {
+        const title = String(finalData.title || '').trim() || actions[0].title
+        const task = await createTask(prisma, {
+          tenantId: item.tenantId,
+          orgId: project?.orgId,
+          ownerId: item.ownerId,
+          title,
+          description: actions.map((a, i) => `${i + 1}. ${a.title}`).join('\n'),
+          priority: 'MEDIUM',
+          source: 'ai_visit_extraction',
+          sourceId: item.visitId || undefined,
+          deadline,
+          projectId: item.projectId,
+        })
+        mainTaskId = task.id
+        createdTitles.push(task.title)
+      }
+
+      for (const step of standalone) {
+        const task = await createTask(prisma, {
+          tenantId: item.tenantId,
+          orgId: project?.orgId,
+          ownerId: item.ownerId,
+          title: step.title,
+          description: '从拜访任务包拆出的独立跟进步骤',
+          priority: 'MEDIUM',
+          source: 'ai_visit_extraction',
+          sourceId: item.visitId || undefined,
+          deadline: step.deadline ? new Date(step.deadline) : deadline,
+          projectId: item.projectId,
+        })
+        createdTitles.push(task.title)
+      }
+
+      if (project) {
+        await recordTimelineEvent(prisma, {
+          tenantId: item.tenantId,
+          customerId: project.companyId || '',
+          projectId: project.id,
+          eventType: ActivityEventType.TASK_CREATED,
+          eventData: {
+            title: createdTitles[0],
+            packageSteps: actions.map((a) => a.title),
+            standaloneSteps: standalone.map((a) => a.title),
+            priority: 'MEDIUM',
+            source: 'ai_visit_extraction',
+            sourceId: item.visitId,
+          },
+          factStatus: 'confirmed',
+          sourceType: 'user',
+          sourceId: userId,
+          sourceLabel: '确认 AI 提取的任务包',
+        })
+      }
+      return mainTaskId ? { taskId: mainTaskId } : {}
+    }
+
     case 'budget_signal': {
       if (!project) return {}
       const financeInfo = (project.financeInfo as Record<string, unknown>) || {}
@@ -166,6 +288,36 @@ export async function applyConfirmedItem(
         await prisma.project.update({
           where: { id: project.id },
           data: { businessInfo: { ...businessInfo, competitors: [...existing, finalData.content] } as never },
+        })
+      }
+      return {}
+    }
+
+    case 'pain_points_group': {
+      // #42 类级批 payload：一次提取的 N 条诉求合并为 1 条 item，确认/自动生效时批量追加
+      if (!project) return {}
+      const humanInfo = (project.humanInfo as Record<string, unknown>) || {}
+      const existing = Array.isArray(humanInfo.painPoints) ? (humanInfo.painPoints as unknown[]) : []
+      const additions = normalizeGroupItems(finalData).filter((p) => !existing.includes(p))
+      if (additions.length > 0) {
+        await prisma.project.update({
+          where: { id: project.id },
+          data: { humanInfo: { ...humanInfo, painPoints: [...existing, ...additions] } as never },
+        })
+      }
+      return {}
+    }
+
+    case 'competitors_group': {
+      // #42 类级批 payload：一次提取的 N 个竞品合并为 1 条 item，确认/自动生效时批量追加
+      if (!project) return {}
+      const businessInfo = (project.businessInfo as Record<string, unknown>) || {}
+      const existing = Array.isArray(businessInfo.competitors) ? (businessInfo.competitors as unknown[]) : []
+      const additions = normalizeGroupItems(finalData).filter((c) => !existing.includes(c))
+      if (additions.length > 0) {
+        await prisma.project.update({
+          where: { id: project.id },
+          data: { businessInfo: { ...businessInfo, competitors: [...existing, ...additions] } as never },
         })
       }
       return {}
@@ -276,8 +428,14 @@ export async function createAutoAppliedItem(
   return item
 }
 
-/** 撤销自动录入：把 content 从项目档案数组里撤掉（applyConfirmedItem 的逆操作） */
-async function revokeAutoItem(prisma: PrismaClient, item: PendingItemLike, userId: string) {
+/** 撤销自动录入：把 content 从项目档案数组里撤掉（applyConfirmedItem 的逆操作）
+ *  #42 类级条目默认按批撤销；modifiedData.items 为「保留清单」（弹层可挑单条保留） */
+async function revokeAutoItem(
+  prisma: PrismaClient,
+  item: PendingItemLike,
+  userId: string,
+  modifiedData?: Record<string, unknown>,
+) {
   if (item.status !== 'auto') throw new Error('仅自动录入的条目可撤销')
   if (!(AUTO_APPLY_TYPES as readonly string[]).includes(item.itemType)) {
     throw new Error('该类型不支持撤销')
@@ -358,6 +516,26 @@ async function revokeAutoItem(prisma: PrismaClient, item: PendingItemLike, userI
         where: { id: project.id },
         data: { businessInfo: { ...businessInfo, competitors: list.filter((c) => c !== content) } as never },
       })
+    } else if (item.itemType === 'pain_points_group' || item.itemType === 'competitors_group') {
+      // #42 按批撤销：默认撤掉本批全部条目；modifiedData.items 里的保留
+      const batch = normalizeGroupItems(item.itemData)
+      const keep = modifiedData ? normalizeGroupItems(modifiedData) : []
+      const remove = batch.filter((v) => !keep.includes(v))
+      if (item.itemType === 'pain_points_group') {
+        const humanInfo = (project.humanInfo as Record<string, unknown>) || {}
+        const list = Array.isArray(humanInfo.painPoints) ? (humanInfo.painPoints as unknown[]) : []
+        await prisma.project.update({
+          where: { id: project.id },
+          data: { humanInfo: { ...humanInfo, painPoints: list.filter((p) => !remove.includes(String(p))) } as never },
+        })
+      } else {
+        const businessInfo = (project.businessInfo as Record<string, unknown>) || {}
+        const list = Array.isArray(businessInfo.competitors) ? (businessInfo.competitors as unknown[]) : []
+        await prisma.project.update({
+          where: { id: project.id },
+          data: { businessInfo: { ...businessInfo, competitors: list.filter((c) => !remove.includes(String(c))) } as never },
+        })
+      }
     }
 
   return prisma.aiPendingItem.update({
@@ -380,9 +558,9 @@ export async function resolveItem(
   if (!item) throw new Error('待确认项不存在')
   if (item.ownerId !== opts.userId) throw new Error('无权处理他人的待确认项')
 
-  // 撤销自动录入（status='auto' 专属通道）
+  // 撤销自动录入（status='auto' 专属通道；类级条目可用 modifiedData.items 挑单条保留）
   if (opts.action === 'revoke') {
-    return revokeAutoItem(prisma, item, opts.userId)
+    return revokeAutoItem(prisma, item, opts.userId, opts.modifiedData)
   }
 
   if (item.status !== 'pending') return item // 幂等：已处理过直接返回

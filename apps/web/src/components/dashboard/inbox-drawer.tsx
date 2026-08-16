@@ -9,6 +9,8 @@ import {
   ArrowRight,
   Zap,
   AlertCircle,
+  ListChecks,
+  SplitSquareHorizontal,
 } from 'lucide-react'
 import Drawer from '../ui/drawer.js'
 import { FormInput, FormSelect, FormTextarea } from '../ui/form.js'
@@ -27,9 +29,10 @@ import {
 import { cn } from '../../lib/utils.js'
 
 /**
- * 收件箱过堂抽屉（issue #34 核心重做）
+ * 收件箱过堂抽屉（issue #34 核心重做；#42 归类确认）
  *
  * - 列表视图：高风险项逐件过堂入口 + 低风险（仅生成任务）快扫区一键批量确认
+ * - #42 任务包：一次提取的 N 条动作 = 1 包（主线任务 + 步骤清单），快扫区整包确认 / 逐条勾选 / 单开某步
  * - 过堂视图：大字提取值 + 来源摘录 + 落点说明 + 四动作（确认 Enter / 改后确认 E / 驳回 X / 跳过 S）
  * - 键盘流：抽屉打开且处于过堂视图时生效（输入框聚焦时不抢键）
  * - 留痕条：本次处理记录逐件留痕，可直达落点
@@ -38,9 +41,40 @@ import { cn } from '../../lib/utils.js'
  *   落 AI 反馈学习队列需 resolve 接口补 reason 字段（TODO，见 issue #34 关联「小销 P1 进化机制」）
  */
 
-/** 高风险 = 会写客户/项目数据的类型；task 只生成任务，沉底快扫 */
+/** 高风险 = 会写客户/项目数据的类型；task / task_package 只生成任务，沉底快扫 */
 function isHighRisk(item: PendingItem): boolean {
-  return item.itemType !== 'task'
+  return item.itemType !== 'task' && item.itemType !== 'task_package'
+}
+
+/** #42 类级条目（批 payload）的人读标签（ITEM_TYPE_LABELS 未覆盖的新类型） */
+const GROUP_TYPE_LABELS: Record<string, string> = {
+  task_package: '任务包',
+  pain_points_group: '客户诉求',
+  competitors_group: '竞品动态',
+}
+
+function typeLabelOf(itemType: string): string {
+  return GROUP_TYPE_LABELS[itemType] || ITEM_TYPE_LABELS[itemType] || itemType
+}
+
+interface PackageStep {
+  title: string
+  deadline?: string
+}
+
+/** 任务包步骤解包（#42 读侧兼容：无 actions 包装时回落 title/content 单元素数组） */
+function packageStepsOf(item: PendingItem): PackageStep[] {
+  const d = item.itemData || {}
+  if (Array.isArray(d.actions)) {
+    return d.actions
+      .map((v) => {
+        const a = (v || {}) as Record<string, unknown>
+        return { title: String(a.title ?? '').trim(), deadline: a.deadline ? String(a.deadline) : undefined }
+      })
+      .filter((s) => s.title)
+  }
+  const single = String(d.title ?? d.content ?? '').trim()
+  return single ? [{ title: single }] : []
 }
 
 const REJECT_REASONS = ['来源对不上', '数值有误', '非新信息', '重复'] as const
@@ -64,10 +98,139 @@ const TRAIL_META: Record<TrailAction, { label: string; className: string }> = {
 }
 
 function targetPathOf(item: PendingItem): string {
-  if (item.itemType === 'task') return '/tasks'
+  if (item.itemType === 'task' || item.itemType === 'task_package') return '/tasks'
   if (item.projectId) return `/projects?id=${item.projectId}`
   if (item.context?.leadId) return `/leads?id=${item.context.leadId}`
   return '/confirmations'
+}
+
+/** 任务包快扫卡（#42）：主线标题 + 步骤编号列表，整包确认 / 逐条勾选 / 单开某步 */
+function TaskPackageQuickCard({ item, onDone }: { item: PendingItem; onDone: (headline: string) => void }) {
+  const resolve = useResolveItem()
+  const steps = packageStepsOf(item)
+  const packageDeadline = item.itemData?.deadline ? String(item.itemData.deadline) : null
+  const mainTitle = String(item.itemData?.title ?? '').trim() || steps[0]?.title || '拜访跟进任务包'
+  const [excluded, setExcluded] = useState<Set<number>>(new Set())
+  const selected = steps.filter((_, i) => !excluded.has(i))
+  const busy = resolve.isPending
+
+  const confirmAll = () =>
+    resolve.mutate(
+      { id: item.id, action: 'confirm' },
+      { onSuccess: () => onDone(`任务包已确认：${mainTitle}（${steps.length} 步）`) },
+    )
+
+  const confirmSelected = () => {
+    if (selected.length === steps.length) return confirmAll()
+    if (selected.length === 0) return
+    resolve.mutate(
+      {
+        id: item.id,
+        action: 'modify',
+        modifiedData: {
+          ...item.itemData,
+          title: selected[0].title,
+          content: selected.map((s) => s.title).join('；'),
+          actions: selected.map((s) => ({ title: s.title })),
+        },
+      },
+      { onSuccess: () => onDone(`任务包已确认：${selected[0].title}（勾选 ${selected.length} 步）`) },
+    )
+  }
+
+  /** 单开某步（逃生门）：该步独立成任务，其余步骤仍按主线任务包确认 */
+  const splitStep = (index: number) => {
+    const step = steps[index]
+    const rest = steps.filter((_, i) => i !== index)
+    if (rest.length === 0) return confirmAll() // 单步包无需拆
+    resolve.mutate(
+      {
+        id: item.id,
+        action: 'modify',
+        modifiedData: {
+          ...item.itemData,
+          title: rest[0].title,
+          content: rest.map((s) => s.title).join('；'),
+          actions: rest.map((s) => ({ title: s.title })),
+          standaloneActions: [{ title: step.title, deadline: packageDeadline || undefined }],
+        },
+      },
+      { onSuccess: () => onDone(`单开任务：${step.title}（其余 ${rest.length} 步进主线任务）`) },
+    )
+  }
+
+  return (
+    <div className="rounded-xl border border-success/25 bg-surface-elevated/40 px-3 py-2.5">
+      <div className="flex items-center justify-between gap-2">
+        <span className="flex min-w-0 items-center gap-1.5">
+          <ListChecks size={13} className="shrink-0 text-success" />
+          <span className="truncate text-xs font-medium text-text-primary">{mainTitle}</span>
+        </span>
+        <span className="shrink-0 text-[10px] text-text-tertiary">任务包 · {steps.length} 步 → 1 个主线任务</span>
+      </div>
+      <ul className="mt-1.5 space-y-1">
+        {steps.map((step, i) => {
+          const on = !excluded.has(i)
+          return (
+            <li key={`${i}-${step.title}`} className="flex items-center gap-2">
+              <button
+                type="button"
+                aria-checked={on}
+                role="checkbox"
+                onClick={() =>
+                  setExcluded((prev) => {
+                    const next = new Set(prev)
+                    if (next.has(i)) next.delete(i)
+                    else next.add(i)
+                    return next
+                  })
+                }
+                className={cn(
+                  'flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors',
+                  on ? 'border-primary bg-primary text-white' : 'border-border text-transparent',
+                )}
+              >
+                <Check size={10} strokeWidth={3} />
+              </button>
+              <span className={`min-w-0 flex-1 truncate text-xs ${on ? 'text-text-secondary' : 'text-text-tertiary line-through'}`}>
+                <span className="mr-1 text-text-tertiary">{i + 1}.</span>
+                {step.title}
+              </span>
+              <button
+                type="button"
+                onClick={() => splitStep(i)}
+                disabled={busy}
+                title="这一步需要独立跟踪？拆成单独的任务，其余步骤照常进主线任务"
+                className="flex shrink-0 items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] text-text-tertiary hover:bg-primary/10 hover:text-primary disabled:opacity-50"
+              >
+                <SplitSquareHorizontal size={10} /> 单开
+              </button>
+            </li>
+          )
+        })}
+      </ul>
+      <div className="mt-2 flex items-center gap-2">
+        <button
+          type="button"
+          onClick={confirmAll}
+          disabled={busy}
+          className="flex-1 rounded-lg border border-success/30 bg-success/10 px-3 py-1.5 text-xs font-medium text-success transition-colors hover:bg-success/20 disabled:opacity-50"
+        >
+          确认整包（{steps.length} 步）
+        </button>
+        {excluded.size > 0 && (
+          <button
+            type="button"
+            onClick={confirmSelected}
+            disabled={busy || selected.length === 0}
+            className="flex-1 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface-elevated disabled:opacity-50"
+          >
+            只确认勾选的 {selected.length} 步
+          </button>
+        )}
+      </div>
+    </div>
+  )
 }
 
 function contextLine(item: PendingItem): string {
@@ -107,6 +270,9 @@ export function InboxDrawer({ open, onClose, focusItemId, onFocusConsumed }: Inb
   const items = useMemo(() => data ?? [], [data])
   const highRisk = useMemo(() => items.filter(isHighRisk), [items])
   const quickScan = useMemo(() => items.filter((i) => !isHighRisk(i)), [items])
+  /** #42：任务包单独成卡；旧单条 task 保留勾选行 */
+  const taskPackages = useMemo(() => quickScan.filter((i) => i.itemType === 'task_package'), [quickScan])
+  const plainTasks = useMemo(() => quickScan.filter((i) => i.itemType !== 'task_package'), [quickScan])
 
   const [order, setOrder] = useState<string[] | null>(null)
   const [mode, setMode] = useState<'list' | 'review'>('list')
@@ -134,7 +300,7 @@ export function InboxDrawer({ open, onClose, focusItemId, onFocusConsumed }: Inb
     if (initialTotal === null && !isLoading) setInitialTotal(items.length)
   }, [open, isLoading, items.length, initialTotal])
 
-  // 战役卡提醒条 / 横幅预览直达某一条
+  // 战役卡提醒条 / 横幅预览直达某一条（任务包等低风险件留在列表视图的快扫区）
   useEffect(() => {
     if (!open || !focusItemId) return
     const target = items.find((i) => i.id === focusItemId)
@@ -142,9 +308,11 @@ export function InboxDrawer({ open, onClose, focusItemId, onFocusConsumed }: Inb
       onFocusConsumed?.()
       return
     }
-    const others = highRisk.filter((i) => i.id !== focusItemId).map((i) => i.id)
-    setOrder([focusItemId, ...others])
-    setMode('review')
+    if (isHighRisk(target)) {
+      const others = highRisk.filter((i) => i.id !== focusItemId).map((i) => i.id)
+      setOrder([focusItemId, ...others])
+      setMode('review')
+    }
     onFocusConsumed?.()
   }, [open, focusItemId, items, highRisk, onFocusConsumed])
 
@@ -184,7 +352,7 @@ export function InboxDrawer({ open, onClose, focusItemId, onFocusConsumed }: Inb
           pushTrail({
             id: currentItem.id,
             headline: describeItem(currentItem).headline,
-            typeLabel: ITEM_TYPE_LABELS[currentItem.itemType] || currentItem.itemType,
+            typeLabel: typeLabelOf(currentItem.itemType),
             action: 'confirm',
             targetPath: targetPathOf(currentItem),
           })
@@ -221,7 +389,7 @@ export function InboxDrawer({ open, onClose, focusItemId, onFocusConsumed }: Inb
           pushTrail({
             id: currentItem.id,
             headline: String(modifiedData.title || modifiedData.content || describeItem(currentItem).headline),
-            typeLabel: ITEM_TYPE_LABELS[currentItem.itemType] || currentItem.itemType,
+            typeLabel: typeLabelOf(currentItem.itemType),
             action: 'modify',
             targetPath: targetPathOf(currentItem),
           })
@@ -246,7 +414,7 @@ export function InboxDrawer({ open, onClose, focusItemId, onFocusConsumed }: Inb
           pushTrail({
             id: currentItem.id,
             headline: describeItem(currentItem).headline,
-            typeLabel: ITEM_TYPE_LABELS[currentItem.itemType] || currentItem.itemType,
+            typeLabel: typeLabelOf(currentItem.itemType),
             action: 'reject',
             reason: rejectReason + (rejectNote.trim() ? `：${rejectNote.trim()}` : ''),
             targetPath: targetPathOf(currentItem),
@@ -317,7 +485,7 @@ export function InboxDrawer({ open, onClose, focusItemId, onFocusConsumed }: Inb
     resetSubModes()
   }
 
-  const selectedQuickIds = quickScan.filter((i) => !deselected.has(i.id)).map((i) => i.id)
+  const selectedQuickIds = plainTasks.filter((i) => !deselected.has(i.id)).map((i) => i.id)
 
   const batchConfirmSelected = () => {
     if (selectedQuickIds.length === 0 || busyRef.current) return
@@ -378,7 +546,7 @@ export function InboxDrawer({ open, onClose, focusItemId, onFocusConsumed }: Inb
           {/* 类型 + 上下文 */}
           <div className="space-y-1.5">
             <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-              {ITEM_TYPE_LABELS[currentItem.itemType] || currentItem.itemType}
+              {typeLabelOf(currentItem.itemType)}
             </span>
             <p className="text-xs text-text-tertiary">{contextLine(currentItem)}</p>
           </div>
@@ -606,7 +774,7 @@ export function InboxDrawer({ open, onClose, focusItemId, onFocusConsumed }: Inb
                     >
                       <div className="flex items-center gap-2">
                         <span className="shrink-0 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
-                          {ITEM_TYPE_LABELS[item.itemType] || item.itemType}
+                          {typeLabelOf(item.itemType)}
                         </span>
                         <span className="min-w-0 flex-1 truncate text-xs font-medium text-text-primary">
                           {desc.headline}
@@ -633,8 +801,25 @@ export function InboxDrawer({ open, onClose, focusItemId, onFocusConsumed }: Inb
                 </span>
               </h4>
               <p className="mb-2 text-xs text-text-tertiary">低风险：只生成跟进任务，不写客户档案，可一键确认</p>
-              <div className="space-y-1.5">
-                {quickScan.map((item) => {
+              <div className="space-y-2">
+                {taskPackages.map((item) => (
+                  <TaskPackageQuickCard
+                    key={item.id}
+                    item={item}
+                    onDone={(headline) =>
+                      pushTrail({
+                        id: `pkg-${item.id}-${Date.now()}`,
+                        headline,
+                        typeLabel: '任务包',
+                        action: 'batch',
+                        targetPath: '/tasks',
+                      })
+                    }
+                  />
+                ))}
+              </div>
+              <div className="mt-1.5 space-y-1.5">
+                {plainTasks.map((item) => {
                   const checked = !deselected.has(item.id)
                   return (
                     <button
@@ -668,14 +853,16 @@ export function InboxDrawer({ open, onClose, focusItemId, onFocusConsumed }: Inb
                   )
                 })}
               </div>
-              <button
-                type="button"
-                onClick={batchConfirmSelected}
-                disabled={selectedQuickIds.length === 0 || batchConfirm.isPending}
-                className="mt-2 w-full rounded-xl border border-success/30 bg-success/10 px-3 py-2 text-xs font-medium text-success transition-colors hover:bg-success/20 disabled:opacity-50"
-              >
-                一键确认 {selectedQuickIds.length} 件任务
-              </button>
+              {plainTasks.length > 0 && (
+                <button
+                  type="button"
+                  onClick={batchConfirmSelected}
+                  disabled={selectedQuickIds.length === 0 || batchConfirm.isPending}
+                  className="mt-2 w-full rounded-xl border border-success/30 bg-success/10 px-3 py-2 text-xs font-medium text-success transition-colors hover:bg-success/20 disabled:opacity-50"
+                >
+                  一键确认 {selectedQuickIds.length} 件任务
+                </button>
+              )}
             </div>
           )}
         </div>
