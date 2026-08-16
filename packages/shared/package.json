@@ -1,6 +1,6 @@
 {
   "name": "@ai-sales/shared",
-  "version": "2.3.0",
+  "version": "4.0.0",
   "description": "前后端共享的 Zod Schema、TypeScript 类型与常量",
   "type": "module",
   "main": "./dist/index.js",

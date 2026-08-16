@@ -1,6 +1,6 @@
 {
   "name": "ai-sales-saas",
-  "version": "3.2.0",
+  "version": "4.0.0",
   "private": true,
   "description": "AI销售管理系统 V3.2 — 客户/项目持续跟进能力",
   "scripts": {
