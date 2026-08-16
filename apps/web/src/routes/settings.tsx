@@ -539,7 +539,9 @@ export default function Settings() {
         </div>
       </SectionCard>
 
-      {/* 销售方法论 */}
+      {/* 销售方法论：核心引擎配置，不对使用者暴露（2026-08-16 隐藏；数据/API/里程碑门禁逻辑不动，
+          管理入口如需恢复见 git 历史或后续做 SUPER_ADMIN 专属页） */}
+      {false && (
       <SectionCard title="销售方法论" padded={false}>
         <>
           {methodologyLoading && (
@@ -676,6 +678,7 @@ export default function Settings() {
           })}
         </>
       </SectionCard>
+      )}
 
       {/* 组织与成员 */}
       <SectionCard title="组织与成员" padded={false}>
