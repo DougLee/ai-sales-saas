@@ -159,11 +159,11 @@ export default function Sidebar({
         />
       )}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex w-[152px] flex-col border-r border-border bg-surface py-4 transition-transform duration-200 lg:static lg:z-auto lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-50 flex w-[152px] flex-col border-r border-border bg-surface py-4 transition-transform duration-200 ease-spring lg:static lg:z-auto lg:translate-x-0 ${
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-      <div className="mb-6 flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-white font-bold text-lg mx-4">
+      <div className="mb-6 flex h-10 w-10 items-center justify-center rounded-inner bg-primary text-white font-bold text-lg mx-4">
         AI
       </div>
       <nav className="flex flex-1 flex-col gap-1 px-3">
@@ -174,14 +174,14 @@ export default function Sidebar({
             <button
               key={item.id}
               onClick={() => { navigate(item.path); onMobileClose?.(); }}
-              className={`group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
+              className={`group flex items-center gap-3 rounded-inner px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
                 active
                   ? "bg-primary-muted text-primary shadow-glow"
                   : "text-text-tertiary hover:bg-surface-elevated hover:text-text-secondary"
               }`}
               title={item.label}
             >
-              <Icon size={18} strokeWidth={active ? 2.5 : 2} />
+              <Icon size={20} strokeWidth={active ? 2.5 : 2} />
               <span className="truncate">{item.label}</span>
             </button>
           );

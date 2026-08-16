@@ -8,14 +8,24 @@ import { post } from '../lib/api.js'
 import { toast } from '../lib/toast.js'
 import { entityRouteTo } from '../lib/entity-links.js'
 import { EmptyState, LoadingState, ErrorState } from '../components/ui/states.js'
+import { PageHeader } from '../components/ui/page-header.js'
+import { SectionCard } from '../components/ui/section-card.js'
+import { KpiTile, type KpiTone } from '../components/ui/kpi-tile.js'
+import { StatusPill } from '../components/ui/status-pill.js'
 import { useAlerts, useMarkAlertRead, useMarkAllAlertsRead, type AlertSummary } from '../hooks/use-alerts.js'
 
-const alertTypeMeta: Record<string, { icon: typeof AlertTriangle; label: string; color: string; bg: string }> = {
-  STALE_PROJECT: { icon: Clock, label: '停滞项目', color: 'text-warning', bg: 'bg-warning/10' },
-  OVERDUE_LEAD: { icon: TrendingDown, label: '逾期线索', color: 'text-danger', bg: 'bg-danger/10' },
-  DUE_TASK: { icon: Calendar, label: '到期任务', color: 'text-primary', bg: 'bg-primary/10' },
-  LOW_HEALTH: { icon: AlertTriangle, label: '低健康度', color: 'text-danger', bg: 'bg-danger/10' },
-  MISSING_VISIT: { icon: MapPinOff, label: '缺少拜访', color: 'text-warning', bg: 'bg-warning/10' },
+const alertTypeMeta: Record<string, { icon: typeof AlertTriangle; label: string; tone: KpiTone }> = {
+  STALE_PROJECT: { icon: Clock, label: '停滞项目', tone: 'warning' },
+  OVERDUE_LEAD: { icon: TrendingDown, label: '逾期线索', tone: 'danger' },
+  DUE_TASK: { icon: Calendar, label: '到期任务', tone: 'primary' },
+  LOW_HEALTH: { icon: AlertTriangle, label: '低健康度', tone: 'danger' },
+  MISSING_VISIT: { icon: MapPinOff, label: '缺少拜访', tone: 'warning' },
+}
+
+const TONE_TEXT: Record<string, string> = {
+  warning: 'text-warning',
+  danger: 'text-danger',
+  primary: 'text-primary',
 }
 
 export default function AlertsPage() {
@@ -61,49 +71,48 @@ export default function AlertsPage() {
 
   return (
     <div className="space-y-5">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold text-text-primary">AI 巡检中心</h1>
-          {data && (
-            <p className="mt-1 text-sm text-text-tertiary">
-              共 {data.totalAlerts} 条预警 · {data.unreadCount ?? 0} 条未读 · 上次扫描 {new Date(data.scanTime).toLocaleString('zh-CN')}
-            </p>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          {(data?.unreadCount ?? 0) > 0 && (
+      <PageHeader
+        title="AI 巡检中心"
+        subtitle={
+          data
+            ? `共 ${data.totalAlerts} 条预警 · ${data.unreadCount ?? 0} 条未读 · 上次扫描 ${new Date(data.scanTime).toLocaleString('zh-CN')}`
+            : '商机停滞、线索逾期自动提醒'
+        }
+        actions={
+          <>
+            {(data?.unreadCount ?? 0) > 0 && (
+              <button
+                onClick={() => markAllRead.mutate()}
+                disabled={markAllRead.isPending}
+                className="flex items-center gap-2 rounded-xl border border-border bg-surface px-4 py-2.5 text-sm font-medium text-text-secondary transition-all hover:bg-surface-elevated disabled:opacity-50"
+              >
+                {markAllRead.isPending ? (
+                  <Loader2 size={16} className="animate-spin" />
+                ) : (
+                  <Check size={16} />
+                )}
+                全部标记已读
+              </button>
+            )}
             <button
-              onClick={() => markAllRead.mutate()}
-              disabled={markAllRead.isPending}
-              className="flex items-center gap-2 rounded-xl border border-border bg-surface px-4 py-2.5 text-sm font-medium text-text-secondary transition-all hover:bg-surface-elevated disabled:opacity-50"
+              onClick={() => scanMutation.mutate()}
+              disabled={scanMutation.isPending}
+              className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-primary-hover disabled:opacity-50"
             >
-              {markAllRead.isPending ? (
+              {scanMutation.isPending ? (
                 <Loader2 size={16} className="animate-spin" />
               ) : (
-                <Check size={16} />
+                <RefreshCw size={16} />
               )}
-              全部标记已读
+              立即扫描
             </button>
-          )}
-          <button
-            onClick={() => scanMutation.mutate()}
-            disabled={scanMutation.isPending}
-            className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-primary-hover disabled:opacity-50"
-          >
-            {scanMutation.isPending ? (
-              <Loader2 size={16} className="animate-spin" />
-            ) : (
-              <RefreshCw size={16} />
-            )}
-            立即扫描
-          </button>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       {/* Summary Cards */}
       {summary && (
-        <div className="grid grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
           {[
             { key: 'staleProjects', ...alertTypeMeta.STALE_PROJECT, label: '停滞项目' },
             { key: 'overdueLeads', ...alertTypeMeta.OVERDUE_LEAD, label: '逾期线索' },
@@ -114,13 +123,7 @@ export default function AlertsPage() {
             const Icon = s.icon
             const value = summary[s.key as keyof AlertSummary]
             return (
-              <div key={s.key} className="rounded-xl border border-border bg-surface px-4 py-3">
-                <div className="flex items-center gap-2">
-                  <Icon size={14} className={s.color} />
-                  <span className="text-xs text-text-tertiary">{s.label}</span>
-                </div>
-                <p className={`mt-1 text-2xl font-semibold ${s.color}`}>{value}</p>
-              </div>
+              <KpiTile key={s.key} size="sm" label={s.label} value={value} icon={Icon} tone={s.tone} />
             )
           })}
         </div>
@@ -160,16 +163,18 @@ export default function AlertsPage() {
       </div>
 
       {/* Alert List */}
-      <div className="rounded-2xl border border-border bg-surface p-5">
-        {isLoading && <LoadingState />}
+      <SectionCard title="预警列表" padded={false}>
+        <div className="px-5 pt-4">
+          {isLoading && <LoadingState />}
 
-        {error && <ErrorState message={(error as Error).message || '预警数据加载失败'} />}
+          {error && <ErrorState message={(error as Error).message || '预警数据加载失败'} />}
 
-        {!isLoading && !error && filteredAlerts.length === 0 && (
-          <EmptyState icon={Bell} title="暂无预警，一切正常" />
-        )}
+          {!isLoading && !error && filteredAlerts.length === 0 && (
+            <EmptyState icon={Bell} title="暂无预警，一切正常" />
+          )}
+        </div>
 
-        <div className="space-y-2">
+        <div className="space-y-2 p-5 pt-3">
           {filteredAlerts.map((alert) => {
             const meta = alertTypeMeta[alert.type]
             const Icon = meta?.icon || Bell
@@ -186,29 +191,17 @@ export default function AlertsPage() {
                   navigate(entityRouteTo(alert.entityType, alert.entityId))
                 }}
               >
-                <div className={`mt-0.5 shrink-0 ${meta?.color || 'text-text-tertiary'}`}>
+                <div className={`mt-0.5 shrink-0 ${TONE_TEXT[meta?.tone ?? ''] || 'text-text-tertiary'}`}>
                   <Icon size={16} />
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-medium text-text-primary">{alert.title}</span>
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                        alert.severity === 'HIGH'
-                          ? 'bg-danger/10 text-danger'
-                          : alert.severity === 'MEDIUM'
-                            ? 'bg-warning/10 text-warning'
-                            : 'bg-text-tertiary/10 text-text-tertiary'
-                      }`}
-                    >
+                    <StatusPill tone={alert.severity === 'HIGH' ? 'danger' : alert.severity === 'MEDIUM' ? 'warning' : 'neutral'}>
                       {alert.severity === 'HIGH' ? '高' : alert.severity === 'MEDIUM' ? '中' : '低'}
-                    </span>
+                    </StatusPill>
                     <span className="text-xs text-text-tertiary">{meta?.label}</span>
-                    {alert.read && (
-                      <span className="rounded-full bg-text-tertiary/10 px-2 py-0.5 text-[10px] text-text-tertiary">
-                        已读
-                      </span>
-                    )}
+                    {alert.read && <StatusPill tone="neutral">已读</StatusPill>}
                   </div>
                   <p className="mt-0.5 text-xs text-text-secondary leading-relaxed">{alert.description}</p>
                   {alert.metadata && Object.keys(alert.metadata).length > 0 && (
@@ -238,7 +231,7 @@ export default function AlertsPage() {
             )
           })}
         </div>
-      </div>
+      </SectionCard>
     </div>
   )
 }

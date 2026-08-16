@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { HelpCircle, ChevronRight, BookOpen, Search, X } from 'lucide-react'
+import { ChevronRight, BookOpen, Search, X } from 'lucide-react'
 import { helpChapters } from '../components/help/help-data.js'
 import { renderMarkdown } from '../lib/markdown.js'
+import { PageHeader } from '../components/ui/page-header.js'
+import { SectionCard } from '../components/ui/section-card.js'
 
 export default function HelpCenter() {
   const location = useLocation()
@@ -179,16 +181,11 @@ export default function HelpCenter() {
       {/* Right Content */}
       <div ref={contentRef} className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-3xl px-8 py-6">
-          {/* Header */}
-          <div className="mb-8 flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
-              <HelpCircle size={20} className="text-primary" />
-            </div>
-            <div>
-              <h1 className="text-xl font-semibold text-text-primary">AI销售管理系统 · 使用指南</h1>
-              <p className="text-sm text-text-tertiary">面向销售人员和管理者的完整操作手册</p>
-            </div>
-          </div>
+          <PageHeader
+            title="AI销售管理系统 · 使用指南"
+            subtitle="面向销售人员和管理者的完整操作手册"
+            className="mb-8"
+          />
 
           {/* Content */}
           {helpChapters.map((chapter) => (
@@ -201,16 +198,11 @@ export default function HelpCenter() {
               </h2>
               <div className="space-y-6">
                 {chapter.sections.map((section) => (
-                  <section
-                    key={section.id}
-                    id={section.id}
-                    className="scroll-mt-6 rounded-2xl border border-border bg-surface p-5"
-                  >
-                    <h3 className="mb-3 text-base font-semibold text-text-primary">{section.title}</h3>
+                  <SectionCard key={section.id} id={section.id} title={section.title} className="scroll-mt-6">
                     <div className="text-text-primary">
                       {renderMarkdown(section.content)}
                     </div>
-                  </section>
+                  </SectionCard>
                 ))}
               </div>
             </div>

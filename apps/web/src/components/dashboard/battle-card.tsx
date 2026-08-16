@@ -6,6 +6,7 @@ import type { Task } from '../../hooks/use-tasks.js'
 import type { BattleUnit } from './battle.utils.js'
 import { isTaskOverdue } from './battle.utils.js'
 import AiEntryButton from '../ai/ai-entry-button.js'
+import { StatusPill, type PillTone } from '../ui/status-pill.js'
 import { cn } from '../../lib/utils.js'
 
 /**
@@ -13,18 +14,22 @@ import { cn } from '../../lib/utils.js'
  * 客户聚合的作战单元：rank 徽章 + 今日任务（可勾选完成）+ 待确认提醒条 + briefing 优先动作。
  */
 
+/* rank 徽章走紧迫度语义色（tokens v2：--color-urgency-*） */
 const RANK_CLASS: Record<number, string> = {
-  1: 'bg-danger text-white',
-  2: 'bg-warning text-white',
+  1: 'bg-urgency-high text-white',
+  2: 'bg-urgency-mid text-white',
   3: 'bg-primary/15 text-primary',
 }
 
-const priorityClass: Record<string, string> = {
-  LOW: 'bg-success/10 text-success',
-  MEDIUM: 'bg-warning/10 text-warning',
-  HIGH: 'bg-danger/10 text-danger',
-  URGENT: 'bg-danger/20 text-danger',
+/* 优先级 → 紧迫度三色：低灰 / 中橙 / 高红（紧急同红但底加深） */
+const priorityTone: Record<string, PillTone> = {
+  LOW: 'urgency-low',
+  MEDIUM: 'urgency-mid',
+  HIGH: 'urgency-high',
+  URGENT: 'urgency-high',
 }
+
+const priorityStrong: Record<string, boolean> = { URGENT: true }
 
 const priorityLabel: Record<string, string> = {
   LOW: '低',
@@ -61,18 +66,21 @@ function BattleTaskRow({ task }: { task: Task }) {
           <Check size={14} />
         </button>
         <div className="min-w-0">
-          <div className={cn('truncate text-sm', overdue && 'text-danger')}>{task.title}</div>
+          <div className={cn('truncate text-sm', overdue && 'text-urgency-high')}>{task.title}</div>
           {deadline && (
             <div className="mt-0.5 flex items-center gap-1 text-xs text-text-tertiary">
               <Clock size={11} />
-              <span className={overdue ? 'text-danger' : undefined}>{overdue ? '已逾期' : deadline}</span>
+              <span className={overdue ? 'text-urgency-high' : undefined}>{overdue ? '已逾期' : deadline}</span>
             </div>
           )}
         </div>
       </div>
-      <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-xs font-medium', priorityClass[task.priority])}>
+      <StatusPill
+        tone={priorityTone[task.priority] ?? 'neutral'}
+        className={priorityStrong[task.priority] ? 'bg-urgency-high/20' : undefined}
+      >
         {priorityLabel[task.priority] ?? task.priority}
-      </span>
+      </StatusPill>
     </div>
   )
 }

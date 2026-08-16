@@ -6,13 +6,14 @@ import {
   Target,
   ClipboardList,
   Inbox,
-  ChevronRight,
   ShieldCheck,
   type LucideIcon,
 } from 'lucide-react'
 import type { Briefing } from '@ai-sales/shared'
 import { buildJudgementSegments } from './battle.utils.js'
 import { cn } from '../../lib/utils.js'
+import { PageHeader } from '../ui/page-header.js'
+import { KpiTile, type KpiTone } from '../ui/kpi-tile.js'
 
 /**
  * 今日作战 · 指挥台（issue #34 区域①）
@@ -67,37 +68,36 @@ export function CommandCenter({ briefing, kpis, isLoading, onOpenInbox }: Comman
   const kpiCells: Array<{
     label: string
     value: number
-    hint?: string
     icon: LucideIcon
-    color: string
+    tone: KpiTone
     onClick: () => void
   }> = [
     {
       label: '推进中商机',
       value: kpis.activeProjects,
       icon: Target,
-      color: 'text-warning',
+      tone: 'funnel-negotiate',
       onClick: () => navigate('/projects'),
     },
     {
       label: '活跃线索',
       value: kpis.activeLeads,
       icon: Activity,
-      color: 'text-primary',
+      tone: 'primary',
       onClick: () => navigate('/leads'),
     },
     {
       label: kpis.overdueTasks > 0 ? `今日行动 · 逾期 ${kpis.overdueTasks}` : '今日行动',
       value: kpis.todayActions,
       icon: ClipboardList,
-      color: kpis.overdueTasks > 0 ? 'text-danger' : 'text-success',
+      tone: kpis.overdueTasks > 0 ? 'danger' : 'success',
       onClick: goBattles,
     },
     {
       label: '待确认',
       value: kpis.pendingConfirmations,
       icon: Inbox,
-      color: kpis.pendingConfirmations > 0 ? 'text-warning' : 'text-text-tertiary',
+      tone: kpis.pendingConfirmations > 0 ? 'warning' : 'default',
       onClick: onOpenInbox,
     },
   ]
@@ -122,18 +122,20 @@ export function CommandCenter({ briefing, kpis, isLoading, onOpenInbox }: Comman
 
   return (
     <section aria-label="作战指挥台" className="space-y-4">
-      <div className="flex items-baseline justify-between">
-        <h1 className="text-xl font-semibold text-text-primary">今日作战</h1>
-        {briefing && (
-          <p className="text-xs text-text-tertiary">
-            {new Date(briefing.date).toLocaleDateString('zh-CN', {
-              month: 'long',
-              day: 'numeric',
-              weekday: 'long',
-            })}
-          </p>
-        )}
-      </div>
+      <PageHeader
+        title="今日作战"
+        actions={
+          briefing && (
+            <p className="text-xs text-text-tertiary">
+              {new Date(briefing.date).toLocaleDateString('zh-CN', {
+                month: 'long',
+                day: 'numeric',
+                weekday: 'long',
+              })}
+            </p>
+          )
+        }
+      />
 
       {/* 一句话战场判断 */}
       <div className="rounded-2xl border border-border bg-surface px-5 py-4">
@@ -176,33 +178,18 @@ export function CommandCenter({ briefing, kpis, isLoading, onOpenInbox }: Comman
         </p>
       </div>
 
-      {/* 四格可点 KPI */}
+      {/* 四格可点 KPI（tabular-nums 数字 + hover 抬升，tokens v2） */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        {kpiCells.map((cell) => {
-          const Icon = cell.icon
-          return (
-            <button
-              key={cell.label}
-              type="button"
-              onClick={cell.onClick}
-              className="group flex items-center justify-between rounded-2xl border border-border bg-surface px-4 py-3 text-left transition-all hover:border-primary/30 hover:shadow-glow"
-            >
-              <div className="flex items-center gap-3">
-                <div className={cn('rounded-xl bg-surface-elevated p-2', cell.color)}>
-                  <Icon size={18} />
-                </div>
-                <div>
-                  <p className={cn('text-lg font-semibold leading-tight', cell.color)}>{cell.value}</p>
-                  <p className="text-xs text-text-tertiary">{cell.label}</p>
-                </div>
-              </div>
-              <ChevronRight
-                size={15}
-                className="shrink-0 text-text-tertiary opacity-0 transition-opacity group-hover:opacity-100"
-              />
-            </button>
-          )
-        })}
+        {kpiCells.map((cell) => (
+          <KpiTile
+            key={cell.label}
+            label={cell.label}
+            value={cell.value}
+            icon={cell.icon}
+            tone={cell.tone}
+            onClick={cell.onClick}
+          />
+        ))}
       </div>
     </section>
   )

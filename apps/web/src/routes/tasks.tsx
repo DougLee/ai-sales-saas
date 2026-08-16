@@ -6,35 +6,46 @@ import { useProjects } from '../hooks/use-projects.js'
 import Drawer from '../components/ui/drawer.js'
 import AiEntryButton from '../components/ai/ai-entry-button.js'
 import { EmptyState, LoadingState, ErrorState } from '../components/ui/states.js'
+import { PageHeader } from '../components/ui/page-header.js'
+import { StatusPill, type PillTone } from '../components/ui/status-pill.js'
 import { useConfirmDialog } from '../hooks/use-confirm-dialog.js'
 import { deadlineInfo, focusTasks, groupTasks, groupTitle, isOverdue } from '../lib/task-utils.js'
 
-const priorityMap: Record<string, { label: string; color: string }> = {
-  LOW: { label: '低', color: 'bg-success/10 text-success' },
-  MEDIUM: { label: '中', color: 'bg-warning/10 text-warning' },
-  HIGH: { label: '高', color: 'bg-danger/10 text-danger' },
-  URGENT: { label: '紧急', color: 'bg-danger/20 text-danger' },
+/* 状态→语义色映射收敛到 tone（issue #36 一色一义），颜色只在 StatusPill 内收口 */
+const priorityMap: Record<string, { label: string; tone: PillTone; strong?: boolean }> = {
+  LOW: { label: '低', tone: 'urgency-low' },
+  MEDIUM: { label: '中', tone: 'urgency-mid' },
+  HIGH: { label: '高', tone: 'urgency-high' },
+  URGENT: { label: '紧急', tone: 'urgency-high', strong: true },
 }
 
-const statusMap: Record<string, { label: string; color: string }> = {
-  PENDING: { label: '待办', color: 'bg-text-tertiary/10 text-text-tertiary' },
-  IN_PROGRESS: { label: '进行中', color: 'bg-primary/10 text-primary' },
-  COMPLETED: { label: '已完成', color: 'bg-success/10 text-success' },
-  CANCELLED: { label: '已取消', color: 'bg-text-tertiary/10 text-text-tertiary' },
+const statusMap: Record<string, { label: string; tone: PillTone }> = {
+  PENDING: { label: '待办', tone: 'neutral' },
+  IN_PROGRESS: { label: '进行中', tone: 'primary' },
+  COMPLETED: { label: '已完成', tone: 'success' },
+  CANCELLED: { label: '已取消', tone: 'neutral' },
 }
 
-const sourceMap: Record<string, { label: string; color: string }> = {
-  project_next_follow_up: { label: '跟进提醒', color: 'bg-primary/10 text-primary' },
-  visit_next_action: { label: '拜访提醒', color: 'bg-blue-500/10 text-blue-500' },
-  visit_analysis: { label: 'AI 提取', color: 'bg-purple-500/10 text-purple-500' },
-  lead_follow_up: { label: '线索跟进', color: 'bg-warning/10 text-warning' },
-  company_unclaimed_release: { label: '公海池释放', color: 'bg-danger/10 text-danger' },
-  stale_project_notify: { label: '停滞提醒', color: 'bg-danger/10 text-danger' },
-  daily_scan_STALE_PROJECT: { label: '巡检', color: 'bg-text-tertiary/10 text-text-tertiary' },
-  daily_scan_OVERDUE_LEAD: { label: '巡检', color: 'bg-text-tertiary/10 text-text-tertiary' },
-  daily_scan_DUE_TASK: { label: '巡检', color: 'bg-text-tertiary/10 text-text-tertiary' },
-  daily_scan_LOW_HEALTH: { label: '巡检', color: 'bg-text-tertiary/10 text-text-tertiary' },
-  daily_scan_MISSING_VISIT: { label: '巡检', color: 'bg-text-tertiary/10 text-text-tertiary' },
+const sourceMap: Record<string, { label: string; tone: PillTone }> = {
+  project_next_follow_up: { label: '跟进提醒', tone: 'primary' },
+  visit_next_action: { label: '拜访提醒', tone: 'info' },
+  visit_analysis: { label: 'AI 提取', tone: 'level-manual' },
+  lead_follow_up: { label: '线索跟进', tone: 'warning' },
+  company_unclaimed_release: { label: '公海池释放', tone: 'danger' },
+  stale_project_notify: { label: '停滞提醒', tone: 'danger' },
+  daily_scan_STALE_PROJECT: { label: '巡检', tone: 'neutral' },
+  daily_scan_OVERDUE_LEAD: { label: '巡检', tone: 'neutral' },
+  daily_scan_DUE_TASK: { label: '巡检', tone: 'neutral' },
+  daily_scan_LOW_HEALTH: { label: '巡检', tone: 'neutral' },
+  daily_scan_MISSING_VISIT: { label: '巡检', tone: 'neutral' },
+}
+
+/* 优先级图标底（Flag 徽标位）与 pill 同语义 */
+const PRIORITY_ICON_CLS: Record<string, string> = {
+  LOW: 'bg-urgency-low/10 text-urgency-low',
+  MEDIUM: 'bg-urgency-mid/10 text-urgency-mid',
+  HIGH: 'bg-urgency-high/10 text-urgency-high',
+  URGENT: 'bg-urgency-high/20 text-urgency-high',
 }
 
 const TABS: Array<{ key: string; label: string; match: (t: Task) => boolean }> = [
@@ -147,40 +158,36 @@ export default function Tasks() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <h2 className="text-xl font-semibold text-text-primary">任务管理</h2>
-          {overdueCount > 0 && (
-            <span className="rounded-full bg-danger/10 px-2.5 py-1 text-xs font-medium text-danger">
-              {overdueCount} 条已逾期
-            </span>
-          )}
-        </div>
-        <div className="flex gap-2">
-          <AiEntryButton
-            prompt="帮我梳理当前任务，哪些需要优先处理"
-            label="问小销"
-            variant="primary"
-            className="rounded-xl px-4 py-2 text-sm"
-          />
-          <div className="relative">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="搜索任务..."
-              className="h-10 rounded-xl border border-border bg-surface pl-9 pr-4 text-sm text-text-primary outline-none placeholder:text-text-tertiary focus:border-primary"
+      <PageHeader
+        title="任务管理"
+        badge={overdueCount > 0 ? <StatusPill tone="urgency-high">{overdueCount} 条已逾期</StatusPill> : undefined}
+        actions={
+          <>
+            <AiEntryButton
+              prompt="帮我梳理当前任务，哪些需要优先处理"
+              label="问小销"
+              variant="primary"
+              className="rounded-xl px-4 py-2 text-sm"
             />
-          </div>
-          <button
-            onClick={() => { setEditingItem(undefined); setOpenForm(true) }}
-            className="flex items-center gap-2 whitespace-nowrap rounded-xl bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90"
-          >
-            <Plus size={16} /> 新建任务
-          </button>
-        </div>
-      </div>
+            <div className="relative">
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="搜索任务..."
+                className="h-10 rounded-xl border border-border bg-surface pl-9 pr-4 text-sm text-text-primary outline-none placeholder:text-text-tertiary focus:border-primary"
+              />
+            </div>
+            <button
+              onClick={() => { setEditingItem(undefined); setOpenForm(true) }}
+              className="flex items-center gap-2 whitespace-nowrap rounded-xl bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90"
+            >
+              <Plus size={16} /> 新建任务
+            </button>
+          </>
+        }
+      />
 
       {/* 状态页签：默认只看进行中，已完成/已取消收进页签 */}
       <div className="flex items-center gap-1 rounded-xl border border-border bg-surface p-1 w-fit">
@@ -208,7 +215,7 @@ export default function Tasks() {
           <div className="flex items-center gap-2 border-b border-warning/20 px-5 py-3">
             <Target size={15} className="text-warning" />
             <span className="text-sm font-semibold text-text-primary">今日聚焦</span>
-            <span className="rounded-full bg-warning/15 px-2 py-0.5 text-xs font-medium text-warning">{focusList.length} 条</span>
+            <StatusPill tone="warning">{focusList.length} 条</StatusPill>
           </div>
           <div className="divide-y divide-warning/10">
             {focusList.map((task) => {
@@ -221,7 +228,7 @@ export default function Tasks() {
                   onClick={() => setDetailId(task.id)}
                 >
                   <div className="flex min-w-0 items-center gap-3">
-                    <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${priorityMap[task.priority]?.color || ''}`}>
+                    <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${PRIORITY_ICON_CLS[task.priority] || ''}`}>
                       <Flag size={14} />
                     </div>
                     <div className="min-w-0">
@@ -282,10 +289,10 @@ export default function Tasks() {
                 </span>
                 <span className="flex shrink-0 items-center gap-2">
                   {groupOverdue > 0 && (
-                    <span className="rounded-full bg-danger/10 px-2 py-0.5 text-[10px] font-medium text-danger">逾期 {groupOverdue}</span>
+                    <StatusPill tone="urgency-high">逾期 {groupOverdue}</StatusPill>
                   )}
                   {groupDueToday > 0 && (
-                    <span className="rounded-full bg-warning/10 px-2 py-0.5 text-[10px] font-medium text-warning">今日 {groupDueToday}</span>
+                    <StatusPill tone="warning">今日 {groupDueToday}</StatusPill>
                   )}
                   <span className="text-xs text-text-tertiary">{group.tasks.length} 条</span>
                 </span>
@@ -305,7 +312,7 @@ export default function Tasks() {
                           {task.status === 'COMPLETED' ? (
                             <CheckCircle2 size={20} className="shrink-0 text-success" />
                           ) : (
-                            <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${priorityMap[task.priority]?.color || ''}`}>
+                            <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${PRIORITY_ICON_CLS[task.priority] || ''}`}>
                               <Flag size={14} />
                             </div>
                           )}
@@ -325,17 +332,17 @@ export default function Tasks() {
                                 </span>
                               )}
                               {task.source && sourceMap[task.source] && (
-                                <span className={`whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10px] font-medium ${sourceMap[task.source].color}`}>
+                                <StatusPill tone={sourceMap[task.source].tone}>
                                   {sourceMap[task.source].label}
-                                </span>
+                                </StatusPill>
                               )}
                             </div>
                           </div>
                         </div>
                         <div className="flex shrink-0 items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                          <span className={`whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium ${statusMap[task.status]?.color || ''}`}>
+                          <StatusPill tone={statusMap[task.status]?.tone ?? 'neutral'}>
                             {statusMap[task.status]?.label || task.status}
-                          </span>
+                          </StatusPill>
                           {!done && (
                             <button
                               onClick={() => complete.mutate(task.id)}

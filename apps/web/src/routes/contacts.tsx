@@ -8,6 +8,9 @@ import { useSearchParams } from 'react-router-dom'
 import Drawer from '../components/ui/drawer.js'
 import PhoneInput from '../components/forms/phone-input.js'
 import { EmptyState, LoadingState, ErrorState } from '../components/ui/states.js'
+import { PageHeader } from '../components/ui/page-header.js'
+import { SectionCard } from '../components/ui/section-card.js'
+import { StatusPill, type PillTone } from '../components/ui/status-pill.js'
 import { useConfirmDialog } from '../hooks/use-confirm-dialog.js'
 import { toast } from '../lib/toast.js'
 
@@ -17,10 +20,10 @@ const roleLabels: Record<string, string> = {
   DECISION_MAKER: '决策者',
 }
 
-const roleColors: Record<string, string> = {
-  COACH: 'bg-success/10 text-success',
-  EVALUATOR: 'bg-warning/10 text-warning',
-  DECISION_MAKER: 'bg-danger/10 text-danger',
+const roleTones: Record<string, PillTone> = {
+  COACH: 'success',
+  EVALUATOR: 'warning',
+  DECISION_MAKER: 'danger',
 }
 
 export default function Contacts() {
@@ -102,34 +105,40 @@ export default function Contacts() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold text-text-primary">联系人</h2>
-        <div className="flex gap-2">
-          <div className="relative">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="搜索姓名、公司、电话..."
-              className="h-10 rounded-xl border border-border bg-surface pl-9 pr-4 text-sm text-text-primary outline-none placeholder:text-text-tertiary focus:border-primary"
-            />
-          </div>
-          <button
-            onClick={() => { setEditingItem(undefined); setOpenForm(true) }}
-            className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90"
-          >
-            <Plus size={16} /> 新建联系人
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        title="联系人"
+        subtitle="手动录入或从知识库导入"
+        actions={
+          <>
+            <div className="relative">
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="搜索姓名、公司、电话..."
+                className="h-10 rounded-xl border border-border bg-surface pl-9 pr-4 text-sm text-text-primary outline-none placeholder:text-text-tertiary focus:border-primary"
+              />
+            </div>
+            <button
+              onClick={() => { setEditingItem(undefined); setOpenForm(true) }}
+              className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90"
+            >
+              <Plus size={16} /> 新建联系人
+            </button>
+          </>
+        }
+      />
 
-      <div className="rounded-2xl border border-border bg-surface">
-        <div className="flex items-center justify-between border-b border-border px-6 py-4">
+      <SectionCard
+        title="联系人列表"
+        actions={
           <span className="text-sm text-text-tertiary">
             {isLoading ? '加载中...' : `共 ${contacts.length} 位联系人`}
           </span>
-        </div>
+        }
+        padded={false}
+      >
 
         {isLoading && <LoadingState />}
 
@@ -144,24 +153,24 @@ export default function Contacts() {
         )}
 
         {!isLoading && !error && contacts.length > 0 && (
-          <div className="divide-y divide-border">
+          <div className="divide-y divide-border border-t border-border">
             {contacts.map((contact) => (
               <div
                 key={contact.id}
-                className="flex items-center justify-between px-6 py-4 hover:bg-surface-elevated/50 transition-colors cursor-pointer"
+                className="flex items-center justify-between px-5 py-4 transition-colors hover:bg-surface-elevated/50 cursor-pointer"
                 onClick={() => setDetailId(contact.id)}
               >
                 <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-inner bg-primary/10 text-primary">
                     <User size={18} />
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium text-text-primary">{contact.name}</span>
                       {contact.decisionRole && (
-                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${roleColors[contact.decisionRole] || ''}`}>
+                        <StatusPill tone={roleTones[contact.decisionRole] ?? 'neutral'}>
                           {roleLabels[contact.decisionRole] || contact.decisionRole}
-                        </span>
+                        </StatusPill>
                       )}
                     </div>
                     <div className="mt-0.5 flex items-center gap-3 text-xs text-text-tertiary">
@@ -206,7 +215,7 @@ export default function Contacts() {
             ))}
           </div>
         )}
-      </div>
+      </SectionCard>
 
       {/* Form Drawer */}
       <Drawer
@@ -297,9 +306,9 @@ export default function Contacts() {
                 <div className="flex items-center gap-2">
                   <span className="text-lg font-semibold text-text-primary">{detailItem.name}</span>
                   {detailItem.decisionRole && (
-                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${roleColors[detailItem.decisionRole] || ''}`}>
+                    <StatusPill tone={roleTones[detailItem.decisionRole] ?? 'neutral'}>
                       {roleLabels[detailItem.decisionRole] || detailItem.decisionRole}
-                    </span>
+                    </StatusPill>
                   )}
                 </div>
                 <p className="text-sm text-text-tertiary">{detailItem.position}{detailItem.department ? ` · ${detailItem.department}` : ''}{detailItem.company ? ` · ${detailItem.company.name}` : ''}</p>

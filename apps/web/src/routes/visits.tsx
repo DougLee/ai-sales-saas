@@ -12,6 +12,8 @@ import VoiceVisitForm from '../components/forms/voice-visit-form.js'
 import AiEntryButton from '../components/ai/ai-entry-button.js'
 import VisitDetailDrawer from '../components/visits/visit-detail-drawer.js'
 import { EmptyState, LoadingState, ErrorState } from '../components/ui/states.js'
+import { PageHeader } from '../components/ui/page-header.js'
+import { StatusPill, type PillTone } from '../components/ui/status-pill.js'
 
 const STAGE_LABELS: Record<string, string> = {
   DRAFT: '草稿',
@@ -22,13 +24,19 @@ const STAGE_LABELS: Record<string, string> = {
   CLOSED: '已关闭',
 }
 
-const STAGE_COLORS: Record<string, string> = {
-  DRAFT: 'bg-text-tertiary/10 text-text-tertiary',
-  PREPARING: 'bg-primary/10 text-primary',
-  READY: 'bg-success/10 text-success',
-  IN_PROGRESS: 'bg-warning/10 text-warning',
-  REVIEWING: 'bg-warning/10 text-warning',
-  CLOSED: 'bg-text-tertiary/10 text-text-tertiary',
+const STAGE_TONES: Record<string, PillTone> = {
+  DRAFT: 'neutral',
+  PREPARING: 'primary',
+  READY: 'success',
+  IN_PROGRESS: 'warning',
+  REVIEWING: 'warning',
+  CLOSED: 'neutral',
+}
+
+const VISIT_TYPE_TONES: Record<string, PillTone> = {
+  offline: 'primary',
+  online: 'success',
+  phone: 'warning',
 }
 
 export default function Visits() {
@@ -84,29 +92,33 @@ export default function Visits() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold text-text-primary">拜访记录</h2>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setVoiceOpen(true)}
-            className="flex items-center gap-2 rounded-xl bg-success px-4 py-2 text-sm font-medium text-white hover:bg-success/90"
-          >
-            <Mic size={16} /> 语音录入
-          </button>
-          <AiEntryButton
-            prompt="帮我准备下次拜访"
-            label="AI准备"
-            variant="primary"
-            className="rounded-xl px-4 py-2 text-sm"
-          />
-          <button
-            onClick={() => { setEditingItem(undefined); setOpen(true) }}
-            className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90"
-          >
-            <Plus size={16} /> 手动录入
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        title="拜访记录"
+        subtitle="语音或手动录入，AI 自动提取关键信息"
+        actions={
+          <>
+            {/* 层级三定律：一屏一个主行动（手动录入 primary 蓝），语音录入降为描边次行动 */}
+            <button
+              onClick={() => setVoiceOpen(true)}
+              className="flex items-center gap-2 rounded-xl border border-success/40 px-4 py-2 text-sm font-medium text-success transition-colors hover:bg-success/10"
+            >
+              <Mic size={16} /> 语音录入
+            </button>
+            <AiEntryButton
+              prompt="帮我准备下次拜访"
+              label="AI准备"
+              variant="primary"
+              className="rounded-xl px-4 py-2 text-sm"
+            />
+            <button
+              onClick={() => { setEditingItem(undefined); setOpen(true) }}
+              className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90"
+            >
+              <Plus size={16} /> 手动录入
+            </button>
+          </>
+        }
+      />
 
       {isLoading && <LoadingState />}
 
@@ -150,20 +162,12 @@ export default function Visits() {
                     entityType="visit"
                     entityId={visit.id}
                   />
-                  <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${STAGE_COLORS[visit.workflowStage || 'DRAFT']}`}>
+                  <StatusPill tone={STAGE_TONES[visit.workflowStage || 'DRAFT']}>
                     {STAGE_LABELS[visit.workflowStage || 'DRAFT']}
-                  </span>
-                  <span
-                    className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-                      visit.visitType === 'offline'
-                        ? 'bg-primary/10 text-primary'
-                        : visit.visitType === 'online'
-                          ? 'bg-success/10 text-success'
-                          : 'bg-warning/10 text-warning'
-                    }`}
-                  >
+                  </StatusPill>
+                  <StatusPill tone={VISIT_TYPE_TONES[visit.visitType] ?? 'neutral'}>
                     {visit.visitType === 'offline' ? '线下' : visit.visitType === 'online' ? '线上' : '电话'}
-                  </span>
+                  </StatusPill>
                   <button
                     onClick={() => handleAnalyze(visit.id)}
                     disabled={analyzingId === visit.id}

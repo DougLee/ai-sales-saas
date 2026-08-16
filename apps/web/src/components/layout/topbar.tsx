@@ -66,7 +66,7 @@ export default function TopBar({ onMenuClick }: { onMenuClick?: () => void }) {
         >
           <Bell size={16} />
           {unreadCount > 0 && (
-            <span className="absolute right-1 top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-danger px-1 text-[10px] font-bold text-white">
+            <span className="absolute right-0.5 top-0.5 flex h-5 min-w-[20px] items-center justify-center rounded-pill bg-danger px-1 text-[10px] font-bold leading-none text-white">
               {unreadCount > 99 ? '99+' : unreadCount}
             </span>
           )}

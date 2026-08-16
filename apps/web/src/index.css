@@ -2,41 +2,157 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ============================================================
+   Design Tokens v2（issue #36）
+   - 每个 chromatic token 双轨定义：`--color-x`（hex，供图表/JS 读取）
+     + `--color-x-rgb`（空格分隔 RGB 通道，供 tailwind `rgb(var() / <alpha-value>)`)
+     —— 双轨让 bg-primary/10 这类透明度修饰类真正生效（此前 var() 直连时
+     Tailwind 3 静默丢弃带 / 的类，全站 10% 底色实际缺失）
+   - 暗色档在 html.dark 整体覆盖，浅深两值各自保证文字对比度 AA
+   ============================================================ */
+
 @layer base {
   :root {
+    /* ===== 基础层（v1 保留） ===== */
     --color-background: #F8F9FA;
+    --color-background-rgb: 248 249 250;
     --color-surface: #FFFFFF;
+    --color-surface-rgb: 255 255 255;
     --color-surface-elevated: #F5F5F7;
+    --color-surface-elevated-rgb: 245 245 247;
     --color-border: #E5E5EA;
+    --color-border-rgb: 229 229 234;
     --color-border-subtle: #F2F2F7;
+    --color-border-subtle-rgb: 242 242 247;
     --color-text-primary: #1C1C1E;
+    --color-text-primary-rgb: 28 28 30;
     /* WCAG AA：正文场景色对白底对比度 ≥4.5:1（审计 #12：原 #8E8E93≈3.3 / #C7C7CC≈1.6 不达标） */
     --color-text-secondary: #52525B;
+    --color-text-secondary-rgb: 82 82 91;
     --color-text-tertiary: #71717A;
+    --color-text-tertiary-rgb: 113 113 122;
     /* 语义色双模式（浅色档加深，作文字色时 ≥4.5:1；暗色档保持 iOS 亮色系） */
     --color-primary: #0071E3;
+    --color-primary-rgb: 0 113 227;
     --color-primary-hover: #2B8AFF;
+    --color-primary-hover-rgb: 43 138 255;
     --color-success: #15803D;
+    --color-success-rgb: 21 128 61;
     --color-warning: #B45309;
+    --color-warning-rgb: 180 83 9;
     --color-danger: #DC2626;
+    --color-danger-rgb: 220 38 38;
     --color-info: #0369A1;
+    --color-info-rgb: 3 105 161;
+
+    /* ===== 漏斗三段色（第二色轴：颜色即阶段，全站一色一义） =====
+       浅档 = 大面积底/图表/进度条；深档 = 作文字色（白底 AA）。
+       育单蓝 M0-M3 / 谈单紫 M4-M6 / 成单绿 M7-M8。 */
+    --color-funnel-nurture: #0071E3;
+    --color-funnel-nurture-rgb: 0 113 227;
+    --color-funnel-nurture-deep: #005BBE;
+    --color-funnel-nurture-deep-rgb: 0 91 190;
+    --color-funnel-negotiate: #7C5CFC;
+    --color-funnel-negotiate-rgb: 124 92 252;
+    --color-funnel-negotiate-deep: #6039E8;
+    --color-funnel-negotiate-deep-rgb: 96 57 232;
+    --color-funnel-close: #0E9F6E;
+    --color-funnel-close-rgb: 14 159 110;
+    --color-funnel-close-deep: #0B7D57;
+    --color-funnel-close-deep-rgb: 11 125 87;
+
+    /* ===== 验证水位色（对接 #33 EvidenceSource / #35 推进卡 v2） ===== */
+    --color-level-manual: #7C3AED; /* 人工 紫 */
+    --color-level-manual-rgb: 124 58 237;
+    --color-level-single: #B45309; /* 单源 橙 */
+    --color-level-single-rgb: 180 83 9;
+    --color-level-cross: #0369A1; /* 交叉 青 */
+    --color-level-cross-rgb: 3 105 161;
+    --color-level-final: #15803D; /* 坐实 绿 */
+    --color-level-final-rgb: 21 128 61;
+
+    /* ===== 紧迫度（今日作战战役排序用） ===== */
+    --color-urgency-high: #DC2626;
+    --color-urgency-high-rgb: 220 38 38;
+    --color-urgency-mid: #B45309;
+    --color-urgency-mid-rgb: 180 83 9;
+    --color-urgency-low: #71717A;
+    --color-urgency-low-rgb: 113 113 122;
+
+    /* ===== 度量（圆角 / 阴影 / 缓动，标注规范 3.2） ===== */
+    --radius-card: 16px;
+    --radius-inner: 11px;
+    --radius-pill: 999px;
+    --shadow-card: 0 1px 3px rgba(28, 28, 30, 0.05), 0 6px 20px rgba(28, 28, 30, 0.04);
+    --shadow-lift: 0 4px 10px rgba(28, 28, 30, 0.08), 0 12px 32px rgba(28, 28, 30, 0.10);
+    --ease-spring: cubic-bezier(0.32, 0.72, 0, 1);
   }
 
   html.dark {
     --color-background: #0A0A0F;
+    --color-background-rgb: 10 10 15;
     --color-surface: #141419;
+    --color-surface-rgb: 20 20 25;
     --color-surface-elevated: #1E1E24;
+    --color-surface-elevated-rgb: 30 30 36;
     --color-border: #2A2A35;
+    --color-border-rgb: 42 42 53;
     --color-border-subtle: #1E1E28;
+    --color-border-subtle-rgb: 30 30 40;
     --color-text-primary: #FFFFFF;
+    --color-text-primary-rgb: 255 255 255;
     --color-text-secondary: #A1A1AA;
+    --color-text-secondary-rgb: 161 161 170;
     --color-text-tertiary: #8E8E96;
+    --color-text-tertiary-rgb: 142 142 150;
     --color-primary: #0A84FF;
+    --color-primary-rgb: 10 132 255;
     --color-primary-hover: #409CFF;
+    --color-primary-hover-rgb: 64 156 255;
     --color-success: #32D74B;
+    --color-success-rgb: 50 215 75;
     --color-warning: #FF9F0A;
+    --color-warning-rgb: 255 159 10;
     --color-danger: #FF453A;
+    --color-danger-rgb: 255 69 58;
     --color-info: #64D2FF;
+    --color-info-rgb: 100 210 255;
+
+    /* 漏斗三段 · 暗色档：浅档收敛饱和度，深档反而更亮（暗底下作字色） */
+    --color-funnel-nurture: #0A84FF;
+    --color-funnel-nurture-rgb: 10 132 255;
+    --color-funnel-nurture-deep: #6CB6FF;
+    --color-funnel-nurture-deep-rgb: 108 182 255;
+    --color-funnel-negotiate: #9F87FF;
+    --color-funnel-negotiate-rgb: 159 135 255;
+    --color-funnel-negotiate-deep: #BCA9FF;
+    --color-funnel-negotiate-deep-rgb: 188 169 255;
+    --color-funnel-close: #32D74B;
+    --color-funnel-close-rgb: 50 215 75;
+    --color-funnel-close-deep: #6EE58A;
+    --color-funnel-close-deep-rgb: 110 229 138;
+
+    /* 水位色 · 暗色档亮色系 */
+    --color-level-manual: #A78BFA;
+    --color-level-manual-rgb: 167 139 250;
+    --color-level-single: #FFB224;
+    --color-level-single-rgb: 255 178 36;
+    --color-level-cross: #38BDF8;
+    --color-level-cross-rgb: 56 189 248;
+    --color-level-final: #4ADE80;
+    --color-level-final-rgb: 74 222 128;
+
+    /* 紧迫度 · 暗色档 */
+    --color-urgency-high: #FF453A;
+    --color-urgency-high-rgb: 255 69 58;
+    --color-urgency-mid: #FF9F0A;
+    --color-urgency-mid-rgb: 255 159 10;
+    --color-urgency-low: #8E8E96;
+    --color-urgency-low-rgb: 142 142 150;
+
+    /* 度量 · 暗色阴影加深 */
+    --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.40), 0 6px 20px rgba(0, 0, 0, 0.32);
+    --shadow-lift: 0 4px 10px rgba(0, 0, 0, 0.45), 0 12px 32px rgba(0, 0, 0, 0.50);
   }
 
   html {

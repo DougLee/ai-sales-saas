@@ -9,7 +9,7 @@ import { InboxBanner, buildInboxPreview } from '../components/dashboard/inbox-ba
 import { InboxDrawer } from '../components/dashboard/inbox-drawer.js'
 import { ModuleMiniNav } from '../components/dashboard/module-mini-nav.js'
 import { VisitPrepCard } from '../components/dashboard/visit-prep-card.js'
-import { ErrorState } from '../components/ui/states.js'
+import { EmptyState, ErrorState } from '../components/ui/states.js'
 import {
   buildBattleUnits,
   matchPriorityAction,
@@ -91,12 +91,10 @@ export default function Dashboard() {
           ) : meError ? (
             <ErrorState message="今日作战数据加载失败" onRetry={() => refetchMe()} />
           ) : battles.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-border bg-surface px-6 py-12 text-center">
-              <p className="text-sm font-medium text-text-secondary">今日没有必须打响的战役</p>
-              <p className="mt-1 text-xs text-text-tertiary">
-                逾期与今日到期的任务会在这里按客户聚合成作战单元；主动推进可去商机页挑选战场
-              </p>
-            </div>
+            <EmptyState
+              title="今日没有必须打响的战役"
+              description="逾期与今日到期的任务会在这里按客户聚合成作战单元；主动推进可去商机页挑选战场"
+            />
           ) : (
             <>
               {battles.map((unit, i) => {
