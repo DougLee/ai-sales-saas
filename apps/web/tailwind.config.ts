@@ -54,14 +54,20 @@ export default {
         pill: 'var(--radius-pill)',
       },
       keyframes: {
-        /* 替代未安装的 tailwindcss-animate（审计 #12 死类）：右侧滑入 */
+        /* 替代未安装的 tailwindcss-animate（审计 #12 死类）：右侧滑入（Drawer） */
         'slide-in-right': {
           from: { opacity: '0', transform: 'translateX(1.5rem)' },
           to: { opacity: '1', transform: 'translateX(0)' },
         },
+        /* Stage 居中舞台进场：轻上浮（issue #40） */
+        'stage-in': {
+          from: { opacity: '0', transform: 'translateY(12px)' },
+          to: { opacity: '1', transform: 'translateY(0)' },
+        },
       },
       animation: {
         'slide-in-right': 'slide-in-right 0.25s cubic-bezier(0.32, 0.72, 0, 1)',
+        'stage-in': 'stage-in 0.25s cubic-bezier(0.32, 0.72, 0, 1)',
       },
       fontFamily: {
         sans: ['-apple-system', 'BlinkMacSystemFont', 'SF Pro Display', 'Segoe UI', 'Roboto', 'Helvetica Neue', 'Arial', 'sans-serif'],
