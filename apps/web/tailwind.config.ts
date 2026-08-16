@@ -43,9 +43,15 @@ export default {
           from: { opacity: '0', transform: 'translateX(1.5rem)' },
           to: { opacity: '1', transform: 'translateX(0)' },
         },
+        /* Stage 居中舞台进入（issue #37）：轻上浮 + 微缩放 */
+        'stage-in': {
+          from: { opacity: '0', transform: 'translateY(1.25rem) scale(0.985)' },
+          to: { opacity: '1', transform: 'translateY(0) scale(1)' },
+        },
       },
       animation: {
         'slide-in-right': 'slide-in-right 0.25s cubic-bezier(0.32, 0.72, 0, 1)',
+        'stage-in': 'stage-in 0.3s cubic-bezier(0.32, 0.72, 0, 1)',
       },
       fontFamily: {
         sans: ['-apple-system', 'BlinkMacSystemFont', 'SF Pro Display', 'Segoe UI', 'Roboto', 'Helvetica Neue', 'Arial', 'sans-serif'],

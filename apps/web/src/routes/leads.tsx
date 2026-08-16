@@ -39,7 +39,7 @@ import { useDebouncedValue } from '../hooks/use-debounced-value.js'
 import { entityRouteTo } from '../lib/entity-links.js'
 import LeadForm from '../components/forms/lead-form.js'
 import LeadFollowUpForm from '../components/forms/lead-follow-up-form.js'
-import Drawer from '../components/ui/drawer.js'
+import Stage from '../components/ui/stage.js'
 import Modal from '../components/ui/modal.js'
 import AiEntryButton from '../components/ai/ai-entry-button.js'
 import { EmptyState, LoadingState, ErrorState } from '../components/ui/states.js'
@@ -572,7 +572,7 @@ export default function Leads() {
       </div>
       <LeadForm open={open} onClose={handleClose} initialData={editingItem} />
 
-      <Drawer open={!!detailId} onClose={() => setDetailId(undefined)} title="线索详情" size="md">
+      <Stage open={!!detailId} onClose={() => setDetailId(undefined)} title="线索详情" size="sm">
         {detailId && !detailItem && <LoadingState />}
         {detailItem && (
           /* 详情三区制（issue #37）：头区行动前置 / 体区分区栅格 / 尾区粘底行动条 */
@@ -879,7 +879,7 @@ export default function Leads() {
             )}
           </div>
         )}
-      </Drawer>
+      </Stage>
 
       {detailItem && (
         <LeadFollowUpForm

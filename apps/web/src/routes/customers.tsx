@@ -7,7 +7,7 @@ import { useDebouncedValue } from '../hooks/use-debounced-value.js'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { entityRouteTo } from '../lib/entity-links.js'
 import { INDUSTRY_OPTIONS, SOURCE_OPTIONS, LEVEL_OPTIONS, sourceLabel, industryLabel } from '../lib/company-options.js'
-import Drawer from '../components/ui/drawer.js'
+import Stage from '../components/ui/stage.js'
 import VisitDetailDrawer from '../components/visits/visit-detail-drawer.js'
 import CustomerForm from '../components/forms/customer-form.js'
 import LeadForm from '../components/forms/lead-form.js'
@@ -589,7 +589,7 @@ export default function Customers() {
       </div>
 
       {/* Detail Drawer */}
-      <Drawer open={!!detailId} onClose={() => { setDetailId(undefined); setMergeOpen(false) }} title="客户详情" size="md">
+      <Stage open={!!detailId} onClose={() => { setDetailId(undefined); setMergeOpen(false) }} title="客户详情" size="sm">
         {detailLoading && (
           <div className="flex items-center justify-center p-12">
             <Loader2 size={24} className="animate-spin text-primary" />
@@ -1116,7 +1116,7 @@ export default function Customers() {
         )}
           </div>
         )}
-      </Drawer>
+      </Stage>
 
       <VisitDetailDrawer visitId={visitDetailId} onClose={() => setVisitDetailId(undefined)} />
 

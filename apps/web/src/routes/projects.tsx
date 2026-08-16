@@ -12,11 +12,11 @@ import { DEFAULT_MILESTONE_GATE_RULES } from '@ai-sales/shared'
 import { invalidateVisitRelated } from '../lib/invalidation.js'
 import { Pagination } from '../components/ui/tabs.js'
 import { PageHeader } from '../components/ui/page-header.js'
+import Stage from '../components/ui/stage.js'
 import { useDebouncedValue } from '../hooks/use-debounced-value.js'
 import AiEntryButton from '../components/ai/ai-entry-button.js'
 import ProjectForm from '../components/forms/project-form.js'
 import VisitForm from '../components/forms/visit-form.js'
-import Drawer from '../components/ui/drawer.js'
 import VisitDetailDrawer from '../components/visits/visit-detail-drawer.js'
 import { EmptyState, LoadingState, ErrorState } from '../components/ui/states.js'
 import { useConfirmDialog } from '../hooks/use-confirm-dialog.js'
@@ -651,7 +651,7 @@ export default function Projects() {
 
       <ProjectForm open={open} onClose={handleClose} initialData={editingItem} />
 
-      <Drawer open={!!detailId} onClose={handleCloseDetail} title="商机详情" size="lg">
+      <Stage open={!!detailId} onClose={handleCloseDetail} title="商机详情" size="md">
         {detailId && !detailItem && <LoadingState />}
         {detailItem && (
           <div className="space-y-5">
@@ -1170,7 +1170,7 @@ export default function Projects() {
             )}
           </div>
         )}
-      </Drawer>
+      </Stage>
 
       <VisitDetailDrawer visitId={visitDetailId} onClose={() => setVisitDetailId(undefined)} />
 
