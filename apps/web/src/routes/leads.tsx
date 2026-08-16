@@ -39,7 +39,7 @@ import { useDebouncedValue } from '../hooks/use-debounced-value.js'
 import { entityRouteTo } from '../lib/entity-links.js'
 import LeadForm from '../components/forms/lead-form.js'
 import LeadFollowUpForm from '../components/forms/lead-follow-up-form.js'
-import Drawer from '../components/ui/drawer.js'
+import Stage from '../components/ui/stage.js'
 import Modal from '../components/ui/modal.js'
 import AiEntryButton from '../components/ai/ai-entry-button.js'
 import { EmptyState, LoadingState, ErrorState } from '../components/ui/states.js'
@@ -572,7 +572,7 @@ export default function Leads() {
       <LeadForm open={open} onClose={handleClose} initialData={editingItem} />
 
       {/* 线索详情（D2 标准详情 40rem：主行动「转化为商机」上移头区 + 粘底行动条） */}
-      <Drawer open={!!detailId} onClose={() => setDetailId(undefined)} title="线索详情" size="md">
+      <Stage open={!!detailId} onClose={() => setDetailId(undefined)} title="线索详情" size="sm">
         {detailId && !detailItem && <LoadingState />}
         {detailItem && (
           <DetailLayout
@@ -885,7 +885,7 @@ export default function Leads() {
             </DetailCollapsible>
           </DetailLayout>
         )}
-      </Drawer>
+      </Stage>
 
       {detailItem && (
         <LeadFollowUpForm

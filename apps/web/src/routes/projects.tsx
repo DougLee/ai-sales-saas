@@ -15,7 +15,7 @@ import { useDebouncedValue } from '../hooks/use-debounced-value.js'
 import AiEntryButton from '../components/ai/ai-entry-button.js'
 import ProjectForm from '../components/forms/project-form.js'
 import VisitForm from '../components/forms/visit-form.js'
-import Drawer from '../components/ui/drawer.js'
+import Stage from '../components/ui/stage.js'
 import VisitDetailDrawer from '../components/visits/visit-detail-drawer.js'
 import { EmptyState, LoadingState, ErrorState } from '../components/ui/states.js'
 import { useConfirmDialog } from '../hooks/use-confirm-dialog.js'
@@ -650,7 +650,7 @@ export default function Projects() {
       <ProjectForm open={open} onClose={handleClose} initialData={editingItem} />
 
       {/* 商机详情（D3 工作台 lg 双栏：头区主行动「提交推进材料」+ 左栏推进卡主线 + 右栏 AI 作战室） */}
-      <Drawer open={!!detailId} onClose={handleCloseDetail} title="商机详情" size="lg">
+      <Stage open={!!detailId} onClose={handleCloseDetail} title="商机详情" size="md">
         {detailId && !detailItem && <LoadingState />}
         {detailItem && (
           <DetailLayout
@@ -1152,7 +1152,7 @@ export default function Projects() {
             )}
           </DetailLayout>
         )}
-      </Drawer>
+      </Stage>
 
       <VisitDetailDrawer visitId={visitDetailId} onClose={() => setVisitDetailId(undefined)} />
 
